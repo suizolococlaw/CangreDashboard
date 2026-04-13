@@ -354,6 +354,50 @@ body {
     font-size: 0.8rem;
 }
 
+.filter-bar {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: end;
+    margin-bottom: 1.5rem;
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 180px;
+}
+
+.filter-field span {
+    color: #a0a0a0;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.filter-field input,
+.filter-field select {
+    background: #141a33;
+    color: #f1f3f8;
+    border: 1px solid #2a3f5f;
+    border-radius: 6px;
+    padding: 0.75rem 0.9rem;
+}
+
+.filter-reset {
+    background: transparent;
+    color: #ff9800;
+    border: 1px solid #ff9800;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+}
+
+.filter-reset:hover {
+    background: rgba(255, 152, 0, 0.08);
+}
+
 /* ============================================================================
    LOADING & EMPTY STATES
    ============================================================================ */
@@ -429,6 +473,10 @@ body {
 
     .prompt-cost {
         margin-left: 0;
+    }
+
+    .filter-field {
+        min-width: 100%;
     }
 }
 

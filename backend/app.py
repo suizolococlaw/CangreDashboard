@@ -221,10 +221,18 @@ def cost_by_prompt():
     """Get per-prompt cost rows and repeated-prompt hotspots."""
     limit = int(request.args.get('limit', 25))
     agent_id = request.args.get('agent_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
 
     db = SessionLocal()
     try:
-        payload = get_cost_by_prompt(db, limit=limit, agent_id=agent_id)
+        payload = get_cost_by_prompt(
+            db,
+            limit=limit,
+            agent_id=agent_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
         return jsonify(payload)
     finally:
         db.close()

@@ -234,6 +234,16 @@
                             <div className="stat-value">${Number(summary.repeated_prompt_spend || 0).toFixed(4)}</div>
                             <div className="stat-subtext">{summary.repeated_prompt_turns || 0} repeated billable turns</div>
                         </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Potential Savings</div>
+                            <div className="stat-value">${Number(summary.potential_savings || 0).toFixed(4)}</div>
+                            <div className="stat-subtext">If repeated prompts were consolidated</div>
+                        </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Merge Opportunity</div>
+                            <div className="stat-value">{Number(summary.merge_opportunity_score || 0).toFixed(1)}%</div>
+                            <div className="stat-subtext">Share of prompt spend that looks compressible</div>
+                        </div>
                     </div>
 
                     <div className="grid-2col">
@@ -281,6 +291,8 @@
                                             <div className="prompt-meta">
                                                 <span>avg ${Number(item.avg_cost || 0).toFixed(4)}</span>
                                                 <span>max ${Number(item.max_cost || 0).toFixed(4)}</span>
+                                                <span>save ${Number(item.potential_savings || 0).toFixed(4)}</span>
+                                                <span>merge {Number(item.merge_opportunity_score || 0).toFixed(1)}%</span>
                                                 <span>{Number(item.total_tokens || 0).toLocaleString()} tokens</span>
                                             </div>
                                         </div>
@@ -324,6 +336,9 @@
             const [timeline, setTimeline] = useState(null);
             const [burnRate, setBurnRate] = useState(null);
             const [promptCosts, setPromptCosts] = useState(null);
+            const [promptAgentId, setPromptAgentId] = useState('');
+            const [promptStartDate, setPromptStartDate] = useState('');
+            const [promptEndDate, setPromptEndDate] = useState('');
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
 
@@ -331,13 +346,18 @@
                 const fetchData = async () => {
                     try {
                         setLoading(true);
+                        const promptParams = new URLSearchParams({ limit: '20' });
+                        if (promptAgentId) promptParams.set('agent_id', promptAgentId);
+                        if (promptStartDate) promptParams.set('start_date', promptStartDate);
+                        if (promptEndDate) promptParams.set('end_date', promptEndDate);
+
                         const [overviewRes, modelsRes, summaryRes, timelineRes, burnRes, promptRes] = await Promise.all([
                             axios.get(`${API_BASE}/overview`),
                             axios.get(`${API_BASE}/cost/by-model`),
                             axios.get(`${API_BASE}/metrics/summary`),
                             axios.get(`${API_BASE}/timeline?limit=50`),
                             axios.get(`${API_BASE}/cost/burn-rate?window_hours=24`),
-                            axios.get(`${API_BASE}/cost/by-prompt?limit=20`),
+                            axios.get(`${API_BASE}/cost/by-prompt?${promptParams.toString()}`),
                         ]);
 
                         setOverview(overviewRes.data);
@@ -359,7 +379,7 @@
                 fetchData();
                 const interval = setInterval(fetchData, 15000); // Refresh every 15s
                 return () => clearInterval(interval);
-            }, []);
+            }, [promptAgentId, promptStartDate, promptEndDate]);
 
             if (error) {
                 return (
@@ -401,6 +421,36 @@
 
                         <div className="section">
                             <h2 className="section-title">🧠 Cost By Prompt</h2>
+                            <div className="filter-bar">
+                                <label className="filter-field">
+                                    <span>Agent</span>
+                                    <select value={promptAgentId} onChange={(event) => setPromptAgentId(event.target.value)}>
+                                        <option value="">All agents</option>
+                                        {(overview?.agents || []).map((agent) => (
+                                            <option key={agent.agent_id} value={agent.agent_id}>{agent.name || agent.agent_id}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label className="filter-field">
+                                    <span>Start date</span>
+                                    <input type="date" value={promptStartDate} onChange={(event) => setPromptStartDate(event.target.value)} />
+                                </label>
+                                <label className="filter-field">
+                                    <span>End date</span>
+                                    <input type="date" value={promptEndDate} onChange={(event) => setPromptEndDate(event.target.value)} />
+                                </label>
+                                <button
+                                    className="filter-reset"
+                                    type="button"
+                                    onClick={() => {
+                                        setPromptAgentId('');
+                                        setPromptStartDate('');
+                                        setPromptEndDate('');
+                                    }}
+                                >
+                                    Reset
+                                </button>
+                            </div>
                             <PromptCostAnalysis promptCosts={promptCosts} loading={loading} />
                         </div>
 

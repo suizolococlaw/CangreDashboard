@@ -3,6 +3,7 @@
 from config import get_pricing
 import logging
 import re
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -239,13 +240,21 @@ def estimate_burn_rate(session_db, window_hours=24):
     }
 
 
-def get_cost_by_prompt(session_db, limit=25, agent_id=None):
+def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end_date=None):
     """Return per-prompt cost rows and repeated-prompt hotspots."""
     from schema import Message
 
     query = session_db.query(Message).order_by(Message.session_id.asc(), Message.timestamp.asc(), Message.id.asc())
     if agent_id:
         query = query.filter(Message.agent_id == agent_id)
+
+    if start_date:
+        start_bound = datetime.fromisoformat(start_date)
+        query = query.filter(Message.timestamp >= start_bound)
+
+    if end_date:
+        end_bound = datetime.fromisoformat(end_date) + timedelta(days=1)
+        query = query.filter(Message.timestamp < end_bound)
 
     rows = query.all()
 
@@ -303,17 +312,23 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None):
     repeated_rows = []
     repeated_spend = 0.0
     repeated_turns = 0
+    repeated_potential_savings = 0.0
     for group in repeated.values():
         if group['occurrences'] < 2:
             continue
+        potential_savings = max(group['total_cost'] - group['max_cost'], 0.0)
+        merge_opportunity_score = (potential_savings / group['total_cost'] * 100) if group['total_cost'] > 0 else 0.0
         repeated_spend += group['total_cost']
         repeated_turns += group['occurrences']
+        repeated_potential_savings += potential_savings
         repeated_rows.append({
             'prompt_preview': group['prompt_preview'],
             'occurrences': group['occurrences'],
             'total_cost': round(group['total_cost'], 6),
             'avg_cost': round(group['total_cost'] / group['occurrences'], 6),
             'max_cost': round(group['max_cost'], 6),
+            'potential_savings': round(potential_savings, 6),
+            'merge_opportunity_score': round(merge_opportunity_score, 2),
             'total_tokens': group['total_tokens'],
             'agents': sorted(group['agents']),
         })
@@ -322,14 +337,24 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None):
 
     total_cost = sum(row['cost'] for row in prompt_rows)
     highest_cost = top_rows[0]['cost'] if top_rows else 0.0
+    avg_cost = (total_cost / len(prompt_rows)) if prompt_rows else 0.0
+    merge_opportunity_score = (repeated_potential_savings / total_cost * 100) if total_cost > 0 else 0.0
 
     return {
+        'filters': {
+            'agent_id': agent_id,
+            'start_date': start_date,
+            'end_date': end_date,
+            'limit': limit,
+        },
         'summary': {
             'billable_prompts': len(prompt_rows),
-            'avg_cost': round(total_cost / len(prompt_rows), 6) if prompt_rows else 0.0,
+            'avg_cost': round(avg_cost, 6),
             'highest_cost': round(highest_cost, 6),
             'repeated_prompt_spend': round(repeated_spend, 6),
             'repeated_prompt_turns': repeated_turns,
+            'potential_savings': round(repeated_potential_savings, 6),
+            'merge_opportunity_score': round(merge_opportunity_score, 2),
         },
         'prompts': top_rows,
         'repeated_prompts': repeated_rows[:10],
