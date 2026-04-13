@@ -305,6 +305,47 @@
             );
         }
 
+        function Recommendations({ promptCosts }) {
+            const repeated = (promptCosts?.repeated_prompts || []);
+            const summary = promptCosts?.summary || {};
+
+            if (repeated.length === 0) return null;
+
+            const topRecs = [...repeated]
+                .sort((a, b) => b.potential_savings - a.potential_savings)
+                .slice(0, 5);
+
+            return (
+                <div className="chart-container">
+                    <div className="rec-header-bar">
+                        <div className="chart-title">💡 Consolidation Recommendations</div>
+                        <div className="rec-summary-pill">
+                            {repeated.length} pattern{repeated.length !== 1 ? 's' : ''} &middot; potential save&nbsp;
+                            <strong>${Number(summary.potential_savings || 0).toFixed(4)}</strong>
+                        </div>
+                    </div>
+                    <div className="rec-list">
+                        {topRecs.map((item, idx) => (
+                            <div className="rec-item" key={idx}>
+                                <div className="rec-item-head">
+                                    <span className="rec-rank">#{idx + 1}</span>
+                                    <span className="rec-action">Consolidate {item.occurrences} identical calls</span>
+                                    <span className="rec-saving">save ${Number(item.potential_savings || 0).toFixed(4)}</span>
+                                </div>
+                                <div className="rec-preview">"{item.prompt_preview}"</div>
+                                <div className="rec-meta">
+                                    <span>avg ${Number(item.avg_cost || 0).toFixed(4)} each</span>
+                                    <span>total ${Number(item.total_cost || 0).toFixed(4)}</span>
+                                    <span>{Number(item.total_tokens || 0).toLocaleString()} tokens</span>
+                                    <span>{(item.agents || []).join(', ')}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
         function Timeline({ timeline, loading }) {
             if (loading) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
             if (!timeline || timeline.length === 0) return <div className="empty-state"><p>No execution data yet</p></div>;
@@ -420,7 +461,16 @@
                         </div>
 
                         <div className="section">
-                            <h2 className="section-title">🧠 Cost By Prompt</h2>
+                            <h2 className="section-title">
+                                🧠 Cost By Prompt
+                                <a
+                                    className="btn-export-csv"
+                                    href={`${API_BASE}/export/prompt-costs.csv?limit=1000${promptAgentId ? '&agent_id=' + promptAgentId : ''}${promptStartDate ? '&start_date=' + promptStartDate : ''}${promptEndDate ? '&end_date=' + promptEndDate : ''}`}
+                                    download
+                                >
+                                    ⬇ Export CSV
+                                </a>
+                            </h2>
                             <div className="filter-bar">
                                 <label className="filter-field">
                                     <span>Agent</span>
@@ -452,6 +502,7 @@
                                 </button>
                             </div>
                             <PromptCostAnalysis promptCosts={promptCosts} loading={loading} />
+                            <Recommendations promptCosts={promptCosts} />
                         </div>
 
                         <div className="section">

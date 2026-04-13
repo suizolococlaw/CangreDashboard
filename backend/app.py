@@ -1,6 +1,8 @@
 """Flask REST API server for CangreDashboard."""
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
+import csv
+import io
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from sqlalchemy import func, desc
@@ -236,6 +238,38 @@ def cost_by_prompt():
         return jsonify(payload)
     finally:
         db.close()
+
+@app.route('/api/export/prompt-costs.csv', methods=['GET'])
+def export_prompt_costs_csv():
+    """Export prompt cost data as a CSV download."""
+    limit = int(request.args.get('limit', 1000))
+    agent_id = request.args.get('agent_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    db = SessionLocal()
+    try:
+        payload = get_cost_by_prompt(db, limit=limit, agent_id=agent_id,
+                                     start_date=start_date, end_date=end_date)
+    finally:
+        db.close()
+
+    output = io.StringIO()
+    fieldnames = ['timestamp', 'agent_id', 'session_id', 'model', 'prompt_preview',
+                  'cost', 'tokens', 'input_tokens', 'output_tokens',
+                  'cache_read_tokens', 'cache_write_tokens']
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+    for row in payload['prompts']:
+        writer.writerow(row)
+
+    filename = f"prompt-costs-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
+
 
 @app.route('/api/agents', methods=['GET'])
 def get_agents():
