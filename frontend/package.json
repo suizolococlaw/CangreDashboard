@@ -1,0 +1,25 @@
+{
+  "name": "cangre-dashboard-frontend",
+  "version": "1.0.0",
+  "description": "OpenClaw cost & token consumption dashboard",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.10.3",
+    "axios": "^1.5.0"
+  },
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "python3 -m http.server 3000 --directory build 2>/dev/null || python -m http.server 3000 --directory build",
+    "build": "mkdir -p build && cp -r public/* build/ && cp src/*.css build/ && node -e \"console.log('Build complete')\"",
+    "test": "echo \"No tests yet\""
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ]
+  }
+}

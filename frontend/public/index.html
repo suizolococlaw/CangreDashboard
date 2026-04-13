@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#000000">
+    <title>CangreDashboard - Cost Intelligence for OpenClaw</title>
+    <link rel="stylesheet" href="./index.css">
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.3/umd/Recharts.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const RechartsLib = window.Recharts || {};
+        const hasCharts = !!window.Recharts;
+        const { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } = RechartsLib;
+
+        const API_BASE = 'http://localhost:5001/api';
+
+        // =====================================================================
+        // COMPONENTS
+        // =====================================================================
+
+        function Overview({ overview, loading }) {
+            if (loading || !overview) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
+
+            const formatNumber = (num) => {
+                if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+                if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+                return num.toString();
+            };
+
+            const costChangeColor = overview.cost_change_pct >= 0 ? 'negative' : 'positive';
+
+            return (
+                <div className="overview-grid">
+                    <div className="stat-tile">
+                        <div className="stat-label">💰 Total Cost (Today)</div>
+                        <div className="stat-value">${overview.total_cost_today.toFixed(4)}</div>
+                        <div className={`stat-change ${costChangeColor}`}>
+                            {overview.cost_change_pct > 0 ? '📈' : '📉'} ${Math.abs(overview.cost_vs_yesterday).toFixed(4)} ({Math.abs(overview.cost_change_pct).toFixed(1)}%)
+                        </div>
+                    </div>
+
+                    <div className="stat-tile">
+                        <div className="stat-label">📊 Total Tokens (Today)</div>
+                        <div className="stat-value">{formatNumber(overview.total_tokens_today)}</div>
+                        <div className="stat-subtext">{overview.session_count_today} sessions</div>
+                    </div>
+
+                    <div className="stat-tile">
+                        <div className="stat-label">🔄 Active Sessions</div>
+                        <div className="stat-value">{overview.active_sessions}</div>
+                        <div className="stat-subtext">Currently running</div>
+                    </div>
+
+                    <div className="stat-tile">
+                        <div className="stat-label">🤖 Active Agents</div>
+                        <div className="stat-value">{overview.agents.length}</div>
+                        <div className="stat-subtext">Configured & tracked</div>
+                    </div>
+
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <h3 className="section-title">👥 Agent Breakdown</h3>
+                        <div className="agent-list">
+                            {overview.agents.map((agent) => (
+                                <div key={agent.agent_id} className="agent-card">
+                                    <div className="agent-name">🦞 {agent.name || agent.agent_id}</div>
+                                    <div className="agent-stat">
+                                        <span className="agent-stat-label">Tokens (Total):</span>
+                                        <span className="agent-stat-value">{formatNumber(agent.total_tokens)}</span>
+                                    </div>
+                                    <div className="agent-stat">
+                                        <span className="agent-stat-label">Cost (Total):</span>
+                                        <span className="agent-stat-value">${agent.total_cost.toFixed(4)}</span>
+                                    </div>
+                                    <div className="agent-stat">
+                                        <span className="agent-stat-label">Last Activity:</span>
+                                        <span className="agent-stat-value" style={{ fontSize: '0.75rem' }}>
+                                            {agent.last_activity ? new Date(agent.last_activity).toLocaleString() : 'N/A'}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function CostBreakdown({ models, summary, loading }) {
+            if (loading || !models) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
+
+            const COLORS = ['#ff4500', '#00bcd4', '#4caf50', '#9c27b0', '#ff9800', '#e91e63', '#00acc1', '#ffc107'];
+            const normalizedModels = models.map((m) => ({
+                ...m,
+                tokens: Number(m.tokens ?? m.total_tokens ?? 0),
+                total_cost: Number(m.total_cost ?? m.cost ?? 0),
+            }));
+
+            if (!hasCharts) {
+                return (
+                    <div className="chart-container">
+                        <div className="chart-title">💰 Cost by Model</div>
+                        <div className="empty-state">
+                            <p>Charts unavailable (CDN blocked). Showing table fallback.</p>
+                        </div>
+                        <div className="agent-list">
+                            {normalizedModels.map((m, idx) => (
+                                <div key={`${m.model}-${idx}`} className="agent-card">
+                                    <div className="agent-name">{m.model}</div>
+                                    <div className="agent-stat">
+                                        <span className="agent-stat-label">Tokens</span>
+                                        <span className="agent-stat-value">{m.tokens.toLocaleString()}</span>
+                                    </div>
+                                    <div className="agent-stat">
+                                        <span className="agent-stat-label">Cost</span>
+                                        <span className="agent-stat-value">${m.total_cost.toFixed(4)}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="grid-2col">
+                    <div className="chart-container">
+                        <div className="chart-title">📊 Token Distribution by Model</div>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <PieChart>
+                                <Pie
+                                    data={normalizedModels}
+                                    dataKey="tokens"
+                                    nameKey="model"
+                                    cx="50%"
+                                    cy="50%"
+                                    outerRadius={80}
+                                    label
+                                >
+                                    {normalizedModels.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{ background: '#1a1f3a', border: '1px solid #2a3f5f', borderRadius: '4px' }}
+                                    formatter={(value) => value.toLocaleString()}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    <div className="chart-container">
+                        <div className="chart-title">💵 Cost by Model</div>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={normalizedModels}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#2a3f5f" />
+                                <XAxis dataKey="model" stroke="#a0a0a0" angle={-45} textAnchor="end" height={80} />
+                                <YAxis stroke="#a0a0a0" />
+                                <Tooltip
+                                    contentStyle={{ background: '#1a1f3a', border: '1px solid #2a3f5f', borderRadius: '4px', color: '#e0e0e0' }}
+                                    formatter={(value) => `$${value.toFixed(4)}`}
+                                />
+                                <Bar dataKey="total_cost" fill="#ff4500" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            );
+        }
+
+        function BurnRate({ burnRate, loading }) {
+            if (loading || !burnRate) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
+
+            return (
+                <div className="chart-container">
+                    <div className="chart-title">🔥 Burn Rate & Projections (Last {burnRate.window_hours}h)</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
+                        <div style={{ background: 'rgba(255, 69, 0, 0.1)', padding: '1rem', borderRadius: '4px', borderLeft: '3px solid #ff4500' }}>
+                            <div style={{ color: '#a0a0a0', fontSize: '0.85rem' }}>Cost per Hour</div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#ff4500' }}>${burnRate.cost_per_hour.toFixed(6)}</div>
+                        </div>
+                        <div style={{ background: 'rgba(76, 175, 80, 0.1)', padding: '1rem', borderRadius: '4px', borderLeft: '3px solid #4caf50' }}>
+                            <div style={{ color: '#a0a0a0', fontSize: '0.85rem' }}>Projected Daily</div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#4caf50' }}>${burnRate.projected_daily_cost.toFixed(4)}</div>
+                        </div>
+                        <div style={{ background: 'rgba(156, 39, 176, 0.1)', padding: '1rem', borderRadius: '4px', borderLeft: '3px solid #9c27b0' }}>
+                            <div style={{ color: '#a0a0a0', fontSize: '0.85rem' }}>Projected Monthly</div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#9c27b0' }}>${burnRate.projected_monthly_cost.toFixed(2)}</div>
+                        </div>
+                        <div style={{ background: 'rgba(0, 188, 212, 0.1)', padding: '1rem', borderRadius: '4px', borderLeft: '3px solid #00bcd4' }}>
+                            <div style={{ color: '#a0a0a0', fontSize: '0.85rem' }}>Tokens per Hour</div>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#00bcd4' }}>{burnRate.tokens_per_hour.toLocaleString()}</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function PromptCostAnalysis({ promptCosts, loading }) {
+            if (loading || !promptCosts) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
+
+            const summary = promptCosts.summary || {};
+            const prompts = promptCosts.prompts || [];
+            const repeatedPrompts = promptCosts.repeated_prompts || [];
+
+            return (
+                <div>
+                    <div className="overview-grid">
+                        <div className="stat-tile">
+                            <div className="stat-label">Billable Prompts</div>
+                            <div className="stat-value">{summary.billable_prompts || 0}</div>
+                            <div className="stat-subtext">Assistant turns with cost</div>
+                        </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Avg Cost / Prompt</div>
+                            <div className="stat-value">${Number(summary.avg_cost || 0).toFixed(4)}</div>
+                            <div className="stat-subtext">Mean spend per billable turn</div>
+                        </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Highest Prompt Cost</div>
+                            <div className="stat-value">${Number(summary.highest_cost || 0).toFixed(4)}</div>
+                            <div className="stat-subtext">Most expensive single turn</div>
+                        </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Repeated Prompt Spend</div>
+                            <div className="stat-value">${Number(summary.repeated_prompt_spend || 0).toFixed(4)}</div>
+                            <div className="stat-subtext">{summary.repeated_prompt_turns || 0} repeated billable turns</div>
+                        </div>
+                    </div>
+
+                    <div className="grid-2col">
+                        <div className="chart-container">
+                            <div className="chart-title">💸 Highest-Cost Prompts</div>
+                            {prompts.length === 0 ? (
+                                <div className="empty-state"><p>No prompt cost data available yet</p></div>
+                            ) : (
+                                <div className="prompt-list">
+                                    {prompts.map((item, idx) => (
+                                        <div className="prompt-row" key={`${item.session_id}-${item.timestamp}-${idx}`}>
+                                            <div className="prompt-row-head">
+                                                <span className="badge badge-primary">{item.agent_id}</span>
+                                                <span className="prompt-model">{item.model}</span>
+                                                <span className="prompt-cost">${Number(item.cost || 0).toFixed(4)}</span>
+                                            </div>
+                                            <div className="prompt-preview">{item.prompt_preview}</div>
+                                            <div className="prompt-meta">
+                                                <span>{Number(item.tokens || 0).toLocaleString()} tokens</span>
+                                                <span>in {Number(item.input_tokens || 0).toLocaleString()}</span>
+                                                <span>out {Number(item.output_tokens || 0).toLocaleString()}</span>
+                                                <span>cache {Number(item.cache_read_tokens || 0).toLocaleString()}</span>
+                                                <span>{item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="chart-container">
+                            <div className="chart-title">♻️ Repeated Prompt Hotspots</div>
+                            {repeatedPrompts.length === 0 ? (
+                                <div className="empty-state"><p>No repeated prompts detected yet</p></div>
+                            ) : (
+                                <div className="prompt-list">
+                                    {repeatedPrompts.map((item, idx) => (
+                                        <div className="prompt-row" key={`${item.prompt_preview}-${idx}`}>
+                                            <div className="prompt-row-head">
+                                                <span className="badge badge-warning">{item.occurrences}x</span>
+                                                <span className="prompt-model">{(item.agents || []).join(', ')}</span>
+                                                <span className="prompt-cost">${Number(item.total_cost || 0).toFixed(4)}</span>
+                                            </div>
+                                            <div className="prompt-preview">{item.prompt_preview}</div>
+                                            <div className="prompt-meta">
+                                                <span>avg ${Number(item.avg_cost || 0).toFixed(4)}</span>
+                                                <span>max ${Number(item.max_cost || 0).toFixed(4)}</span>
+                                                <span>{Number(item.total_tokens || 0).toLocaleString()} tokens</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function Timeline({ timeline, loading }) {
+            if (loading) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
+            if (!timeline || timeline.length === 0) return <div className="empty-state"><p>No execution data yet</p></div>;
+
+            const formatTime = (timestamp) => new Date(timestamp).toLocaleTimeString();
+            const formatTokens = (tokens) => {
+                if (tokens >= 1000) return (tokens / 1000).toFixed(1) + 'K';
+                return tokens.toString();
+            };
+
+            return (
+                <div className="timeline-container">
+                    {timeline.map((item, idx) => (
+                        <div key={idx} className="timeline-item">
+                            <div className="timeline-time">{formatTime(item.timestamp)}</div>
+                            <div className="timeline-agent">🦞 {item.agent_id}</div>
+                            <div className="timeline-model">{item.model} · {item.role}</div>
+                            <div className="timeline-tokens">{formatTokens(item.tokens)} 🔤</div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        function Dashboard() {
+            const [overview, setOverview] = useState(null);
+            const [models, setModels] = useState(null);
+            const [summary, setSummary] = useState(null);
+            const [timeline, setTimeline] = useState(null);
+            const [burnRate, setBurnRate] = useState(null);
+            const [promptCosts, setPromptCosts] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                const fetchData = async () => {
+                    try {
+                        setLoading(true);
+                        const [overviewRes, modelsRes, summaryRes, timelineRes, burnRes, promptRes] = await Promise.all([
+                            axios.get(`${API_BASE}/overview`),
+                            axios.get(`${API_BASE}/cost/by-model`),
+                            axios.get(`${API_BASE}/metrics/summary`),
+                            axios.get(`${API_BASE}/timeline?limit=50`),
+                            axios.get(`${API_BASE}/cost/burn-rate?window_hours=24`),
+                            axios.get(`${API_BASE}/cost/by-prompt?limit=20`),
+                        ]);
+
+                        setOverview(overviewRes.data);
+                        setModels(modelsRes.data);
+                        setSummary(summaryRes.data);
+                        setTimeline(timelineRes.data);
+                        setBurnRate(burnRes.data);
+                        setPromptCosts(promptRes.data);
+                        setError(null);
+                    } catch (err) {
+                        const details = err?.response?.status ? ` (HTTP ${err.response.status})` : '';
+                        setError(`Connection failed: ${err.message}${details}`);
+                        console.error(err);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+
+                fetchData();
+                const interval = setInterval(fetchData, 15000); // Refresh every 15s
+                return () => clearInterval(interval);
+            }, []);
+
+            if (error) {
+                return (
+                    <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                        <div style={{ textAlign: 'center', background: '#1a1f3a', padding: '2rem', borderRadius: '8px', maxWidth: '500px' }}>
+                            <h2 style={{ color: '#ff4500', marginBottom: '1rem' }}>⚠️ Connection Error</h2>
+                            <p style={{ color: '#e0e0e0', marginBottom: '1rem' }}>{error}</p>
+                            <p style={{ color: '#a0a0a0' }}>Make sure backend is running:</p>
+                            <code style={{ background: '#0a0e27', padding: '1rem', display: 'block', borderRadius: '4px', marginTop: '1rem', color: '#00bcd4' }}>
+                                cd ~/github/CangreDashboard/backend<br/>bash run.sh
+                            </code>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="dashboard-container">
+                    <div className="dashboard-header">
+                        <h1>🦞 CangreDashboard</h1>
+                        <p>Real-time cost intelligence for OpenClaw</p>
+                    </div>
+
+                    <div className="dashboard-content">
+                        <div className="section">
+                            <h2 className="section-title">📈 Overview</h2>
+                            <Overview overview={overview} loading={loading} />
+                        </div>
+
+                        <div className="section">
+                            <h2 className="section-title">💰 Cost Analysis</h2>
+                            <CostBreakdown models={models} summary={summary} loading={loading} />
+                        </div>
+
+                        <div className="section">
+                            <h2 className="section-title">🔥 Burn Rate & Projections</h2>
+                            <BurnRate burnRate={burnRate} loading={loading} />
+                        </div>
+
+                        <div className="section">
+                            <h2 className="section-title">🧠 Cost By Prompt</h2>
+                            <PromptCostAnalysis promptCosts={promptCosts} loading={loading} />
+                        </div>
+
+                        <div className="section">
+                            <h2 className="section-title">⏱️ Recent Execution Timeline</h2>
+                            <Timeline timeline={timeline} loading={loading} />
+                        </div>
+
+                        <div style={{ textAlign: 'center', color: '#a0a0a0', marginTop: '3rem', fontSize: '0.85rem' }}>
+                            {!hasCharts && <p style={{ color: '#ff9800' }}>Charts disabled: Recharts CDN unavailable.</p>}
+                            <p>Last updated: {new Date().toLocaleTimeString()}</p>
+                            <p>CangreDashboard v1.0 | OpenClaw Cost Intelligence</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
