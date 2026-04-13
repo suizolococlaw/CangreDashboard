@@ -14,8 +14,9 @@ from cost_analyzer import (
     aggregate_daily_costs, get_cost_summary, get_cost_by_agent, 
     get_cost_by_model, get_cost_trend, estimate_burn_rate, get_cost_by_prompt
 )
-from config import FLASK_HOST, FLASK_PORT, DEBUG, validate_config
+from config import FLASK_HOST, FLASK_PORT, DEBUG, validate_config, MONTHLY_BUDGET
 import threading
+import time
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,6 +26,8 @@ app = Flask(__name__)
 CORS(app)
 
 BASELINE_FILE = os.path.expanduser('~/.openclaw/cangre_baseline.json')
+MILESTONES_FILE = os.path.expanduser('~/.openclaw/cangre_milestones.json')
+RESOLUTIONS_FILE = os.path.expanduser('~/.openclaw/cangre_rec_resolutions.json')
 
 # Initialize on startup
 @app.before_request
@@ -222,6 +225,46 @@ def cost_burn_rate():
         db.close()
 
 
+@app.route('/api/cost/month', methods=['GET'])
+def cost_this_month():
+    """Return current-month spend vs budget cap."""
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        ym = now.strftime('%Y-%m')
+        total_spend = db.query(func.sum(Message.cost_total)).filter(
+            func.strftime('%Y-%m', Message.timestamp) == ym
+        ).scalar() or 0.0
+
+        import calendar
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        days_elapsed = now.day
+        days_remaining = days_in_month - days_elapsed
+        daily_avg = total_spend / days_elapsed if days_elapsed > 0 else 0.0
+        projected = daily_avg * days_in_month
+        pct_used = (total_spend / MONTHLY_BUDGET * 100) if MONTHLY_BUDGET > 0 else 0.0
+        if pct_used < 70:
+            status = 'ok'
+        elif pct_used < 90:
+            status = 'warning'
+        else:
+            status = 'critical'
+        return jsonify({
+            'month': ym,
+            'current_spend': round(total_spend, 4),
+            'monthly_budget': MONTHLY_BUDGET,
+            'pct_used': round(pct_used, 2),
+            'days_elapsed': days_elapsed,
+            'days_remaining': days_remaining,
+            'days_in_month': days_in_month,
+            'projected_month_end': round(projected, 4),
+            'daily_avg': round(daily_avg, 6),
+            'budget_status': status,
+        })
+    finally:
+        db.close()
+
+
 @app.route('/api/cost/by-prompt', methods=['GET'])
 def cost_by_prompt():
     """Get per-prompt cost rows and repeated-prompt hotspots."""
@@ -243,6 +286,40 @@ def cost_by_prompt():
             repeated_only=repeated_only,
             top_n_recommendations=top_n,
         )
+        # Enrich repeated_prompts with resolution_status
+        resolutions = {}
+        if os.path.exists(RESOLUTIONS_FILE):
+            with open(RESOLUTIONS_FILE, 'r') as f:
+                resolutions = json.load(f)
+        now = datetime.utcnow()
+        from cost_analyzer import _normalize_prompt_key
+        for item in payload.get('repeated_prompts', []):
+            key = _normalize_prompt_key(item['prompt_preview'])
+            last_seen_str = item.get('last_seen')
+            days_since = 9999
+            if last_seen_str:
+                try:
+                    last_seen_dt = datetime.fromisoformat(last_seen_str)
+                    days_since = (now - last_seen_dt).total_seconds() / 86400
+                except ValueError:
+                    pass
+            ack = resolutions.get(key)
+            if ack:
+                item['acknowledged_at'] = ack['acknowledged_at']
+                try:
+                    ack_dt = datetime.fromisoformat(ack['acknowledged_at'])
+                    last_seen_dt = datetime.fromisoformat(last_seen_str) if last_seen_str else None
+                    if last_seen_dt and last_seen_dt > ack_dt:
+                        item['resolution_status'] = 'regressed'
+                    elif days_since >= 7:
+                        item['resolution_status'] = 'resolved'
+                    else:
+                        item['resolution_status'] = 'watching'
+                except (ValueError, UnboundLocalError):
+                    item['resolution_status'] = 'watching'
+            else:
+                item['acknowledged_at'] = None
+                item['resolution_status'] = 'resolved' if days_since >= 7 else 'active'
         return jsonify(payload)
     finally:
         db.close()
@@ -390,6 +467,91 @@ def capture_baseline():
     with open(BASELINE_FILE, 'w') as f:
         json.dump(snapshot, f, indent=2)
     return jsonify({'status': 'baseline saved', 'snapshot': snapshot})
+
+
+# ============================================================================
+# MILESTONES
+# ============================================================================
+
+def _load_milestones():
+    if not os.path.exists(MILESTONES_FILE):
+        return []
+    with open(MILESTONES_FILE, 'r') as f:
+        return json.load(f)
+
+def _save_milestones(milestones):
+    os.makedirs(os.path.dirname(MILESTONES_FILE), exist_ok=True)
+    with open(MILESTONES_FILE, 'w') as f:
+        json.dump(milestones, f, indent=2)
+
+
+@app.route('/api/milestones', methods=['GET'])
+def get_milestones():
+    return jsonify(_load_milestones())
+
+
+@app.route('/api/milestones', methods=['POST'])
+def create_milestone():
+    body = request.get_json(silent=True) or {}
+    name = (body.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    db = SessionLocal()
+    try:
+        payload = get_cost_by_prompt(db, limit=1000, top_n_recommendations=100)
+    finally:
+        db.close()
+    s = payload['summary']
+    milestone = {
+        'id': f"m_{int(time.time())}",
+        'name': name,
+        'note': (body.get('note') or '').strip() or None,
+        'created_at': datetime.utcnow().isoformat(),
+        'snapshot': {
+            'repeated_prompt_spend': s.get('repeated_prompt_spend', 0),
+            'repeated_prompt_turns': s.get('repeated_prompt_turns', 0),
+            'potential_savings': s.get('potential_savings', 0),
+            'merge_opportunity_score': s.get('merge_opportunity_score', 0),
+            'billable_prompts': s.get('billable_prompts', 0),
+        },
+    }
+    milestones = _load_milestones()
+    milestones.append(milestone)
+    _save_milestones(milestones)
+    return jsonify(milestone), 201
+
+
+@app.route('/api/milestones/<milestone_id>', methods=['DELETE'])
+def delete_milestone(milestone_id):
+    milestones = _load_milestones()
+    remaining = [m for m in milestones if m['id'] != milestone_id]
+    if len(remaining) == len(milestones):
+        return jsonify({'error': 'not found'}), 404
+    _save_milestones(remaining)
+    return jsonify({'status': 'deleted'})
+
+
+# ============================================================================
+# RECOMMENDATION RESOLUTION
+# ============================================================================
+
+@app.route('/api/recommendations/acknowledge', methods=['POST'])
+def acknowledge_recommendation():
+    body = request.get_json(silent=True) or {}
+    prompt_key = (body.get('prompt_key') or '').strip()
+    if not prompt_key:
+        return jsonify({'error': 'prompt_key is required'}), 400
+    resolutions = {}
+    if os.path.exists(RESOLUTIONS_FILE):
+        with open(RESOLUTIONS_FILE, 'r') as f:
+            resolutions = json.load(f)
+    now_iso = datetime.utcnow().isoformat()
+    resolutions[prompt_key] = {'acknowledged_at': now_iso}
+    os.makedirs(os.path.dirname(RESOLUTIONS_FILE), exist_ok=True)
+    with open(RESOLUTIONS_FILE, 'w') as f:
+        json.dump(resolutions, f, indent=2)
+    return jsonify({'status': 'ok', 'prompt_key': prompt_key, 'acknowledged_at': now_iso})
+
 
 @app.route('/api/admin/cleanup', methods=['POST'])
 def admin_cleanup():

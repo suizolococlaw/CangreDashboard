@@ -302,6 +302,7 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
             'max_cost': 0.0,
             'agents': set(),
             'sessions': set(),
+            'max_timestamp': None,
         })
         group['occurrences'] += 1
         group['total_cost'] += row['cost']
@@ -309,6 +310,9 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
         group['max_cost'] = max(group['max_cost'], row['cost'])
         group['agents'].add(row['agent_id'])
         group['sessions'].add(row['session_id'])
+        ts = row.get('timestamp')
+        if ts and (group['max_timestamp'] is None or ts > group['max_timestamp']):
+            group['max_timestamp'] = ts
 
     repeated_keys_with_multi = {
         _normalize_prompt_key(g['prompt_preview'])
@@ -344,6 +348,7 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
             'total_tokens': group['total_tokens'],
             'agents': sorted(group['agents']),
             'sessions': sorted(group['sessions']),
+            'last_seen': group['max_timestamp'],
         })
 
     repeated_rows.sort(key=lambda item: (item['total_cost'], item['occurrences']), reverse=True)

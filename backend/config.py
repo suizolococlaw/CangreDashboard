@@ -19,6 +19,9 @@ DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
 # Data retention
 RETENTION_DAYS = 90
 
+# Budget cap (USD/month). Change here to update the dashboard gauge.
+MONTHLY_BUDGET = 10.0
+
 # Pricing configuration ($/token)
 # When real billing is enabled, update these values
 PRICING_TIERS = {
