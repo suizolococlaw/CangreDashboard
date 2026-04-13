@@ -3,6 +3,8 @@
 from flask import Flask, jsonify, request, Response
 import csv
 import io
+import json
+import os
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from sqlalchemy import func, desc
@@ -21,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+BASELINE_FILE = os.path.expanduser('~/.openclaw/cangre_baseline.json')
 
 # Initialize on startup
 @app.before_request
@@ -225,6 +229,8 @@ def cost_by_prompt():
     agent_id = request.args.get('agent_id')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    repeated_only = request.args.get('repeated_only', 'false').lower() == 'true'
+    top_n = int(request.args.get('top_n', 10))
 
     db = SessionLocal()
     try:
@@ -234,6 +240,8 @@ def cost_by_prompt():
             agent_id=agent_id,
             start_date=start_date,
             end_date=end_date,
+            repeated_only=repeated_only,
+            top_n_recommendations=top_n,
         )
         return jsonify(payload)
     finally:
@@ -241,29 +249,44 @@ def cost_by_prompt():
 
 @app.route('/api/export/prompt-costs.csv', methods=['GET'])
 def export_prompt_costs_csv():
-    """Export prompt cost data as a CSV download."""
+    """Export prompt cost data as a CSV download. mode=all (default) or mode=repeated."""
     limit = int(request.args.get('limit', 1000))
     agent_id = request.args.get('agent_id')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    mode = request.args.get('mode', 'all')  # 'all' or 'repeated'
 
     db = SessionLocal()
     try:
         payload = get_cost_by_prompt(db, limit=limit, agent_id=agent_id,
-                                     start_date=start_date, end_date=end_date)
+                                     start_date=start_date, end_date=end_date,
+                                     top_n_recommendations=1000)
     finally:
         db.close()
 
     output = io.StringIO()
-    fieldnames = ['timestamp', 'agent_id', 'session_id', 'model', 'prompt_preview',
-                  'cost', 'tokens', 'input_tokens', 'output_tokens',
-                  'cache_read_tokens', 'cache_write_tokens']
-    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
-    writer.writeheader()
-    for row in payload['prompts']:
-        writer.writerow(row)
+    if mode == 'repeated':
+        fieldnames = ['prompt_preview', 'occurrences', 'total_cost', 'avg_cost', 'max_cost',
+                      'potential_savings', 'merge_opportunity_score', 'total_tokens', 'agents', 'sessions']
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for row in payload['repeated_prompts']:
+            row_out = dict(row)
+            row_out['agents'] = '|'.join(row_out.get('agents') or [])
+            row_out['sessions'] = '|'.join(row_out.get('sessions') or [])
+            writer.writerow(row_out)
+        suffix = 'repeated'
+    else:
+        fieldnames = ['timestamp', 'agent_id', 'session_id', 'model', 'prompt_preview',
+                      'cost', 'tokens', 'input_tokens', 'output_tokens',
+                      'cache_read_tokens', 'cache_write_tokens']
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for row in payload['prompts']:
+            writer.writerow(row)
+        suffix = 'all'
 
-    filename = f"prompt-costs-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    filename = f"prompt-costs-{suffix}-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
         output.getvalue(),
         mimetype='text/csv',
@@ -306,6 +329,67 @@ def admin_rescan():
     """Trigger a full rescan of OpenClaw logs."""
     threading.Thread(target=full_scan, daemon=True).start()
     return jsonify({'status': 'rescan started', 'timestamp': datetime.utcnow().isoformat()})
+
+
+@app.route('/api/sessions/<session_id_param>/prompts', methods=['GET'])
+def session_prompts(session_id_param):
+    """Get all prompt turns for a specific session."""
+    db = SessionLocal()
+    try:
+        rows = db.query(Message).filter_by(session_id=session_id_param).order_by(
+            Message.timestamp.asc(), Message.id.asc()).all()
+        last_user_prompt = None
+        turns = []
+        for row in rows:
+            preview = (row.content_preview or '').strip()
+            if row.role == 'user':
+                last_user_prompt = preview
+                continue
+            if row.role != 'assistant' or (row.cost_total or 0) <= 0:
+                continue
+            turns.append({
+                'timestamp': row.timestamp.isoformat() if row.timestamp else None,
+                'agent_id': row.agent_id,
+                'session_id': row.session_id,
+                'model': row.model or 'unknown',
+                'prompt_preview': last_user_prompt or preview or '(No prompt preview captured)',
+                'cost': round(row.cost_total or 0.0, 6),
+                'tokens': row.total_tokens or 0,
+                'input_tokens': row.input_tokens or 0,
+                'output_tokens': row.output_tokens or 0,
+                'cache_read_tokens': row.cache_read_tokens or 0,
+                'cache_write_tokens': row.cache_write_tokens or 0,
+            })
+        return jsonify({'session_id': session_id_param, 'turns': turns})
+    finally:
+        db.close()
+
+
+@app.route('/api/cost/baseline', methods=['GET'])
+def get_baseline():
+    """Retrieve saved cost baseline."""
+    if not os.path.exists(BASELINE_FILE):
+        return jsonify({'baseline': None})
+    with open(BASELINE_FILE, 'r') as f:
+        return jsonify({'baseline': json.load(f)})
+
+
+@app.route('/api/cost/baseline', methods=['POST'])
+def capture_baseline():
+    """Capture current cost summary as baseline snapshot."""
+    db = SessionLocal()
+    try:
+        payload = get_cost_by_prompt(db, limit=1000, top_n_recommendations=100)
+    finally:
+        db.close()
+    snapshot = {
+        'captured_at': datetime.utcnow().isoformat(),
+        'summary': payload['summary'],
+    }
+    os.makedirs(os.path.dirname(BASELINE_FILE), exist_ok=True)
+    with open(BASELINE_FILE, 'w') as f:
+        json.dump(snapshot, f, indent=2)
+    return jsonify({'status': 'baseline saved', 'snapshot': snapshot})
 
 @app.route('/api/admin/cleanup', methods=['POST'])
 def admin_cleanup():

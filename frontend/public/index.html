@@ -305,7 +305,7 @@
             );
         }
 
-        function Recommendations({ promptCosts }) {
+        function Recommendations({ promptCosts, onDrillItem }) {
             const repeated = (promptCosts?.repeated_prompts || []);
             const summary = promptCosts?.summary || {};
 
@@ -326,7 +326,12 @@
                     </div>
                     <div className="rec-list">
                         {topRecs.map((item, idx) => (
-                            <div className="rec-item" key={idx}>
+                            <div
+                                className="rec-item"
+                                key={idx}
+                                onClick={() => onDrillItem && onDrillItem(item)}
+                                style={{ cursor: onDrillItem ? 'pointer' : 'default' }}
+                            >
                                 <div className="rec-item-head">
                                     <span className="rec-rank">#{idx + 1}</span>
                                     <span className="rec-action">Consolidate {item.occurrences} identical calls</span>
@@ -338,6 +343,7 @@
                                     <span>total ${Number(item.total_cost || 0).toFixed(4)}</span>
                                     <span>{Number(item.total_tokens || 0).toLocaleString()} tokens</span>
                                     <span>{(item.agents || []).join(', ')}</span>
+                                    <span style={{ color: '#00bcd4' }}>{(item.sessions || []).length} session{(item.sessions || []).length !== 1 ? 's' : ''} → drill</span>
                                 </div>
                             </div>
                         ))}
@@ -370,6 +376,103 @@
             );
         }
 
+        function BaselineDelta({ current, baseline }) {
+            if (!baseline || !current) return null;
+            const b = baseline.summary || {};
+            const c = current;
+            const metrics = [
+                { key: 'repeated_prompt_spend', label: 'Repeated spend', fmt: v => `$${Number(v).toFixed(4)}` },
+                { key: 'repeated_prompt_turns', label: 'Repeated turns', fmt: v => v },
+                { key: 'potential_savings', label: 'Potential savings', fmt: v => `$${Number(v).toFixed(4)}` },
+                { key: 'merge_opportunity_score', label: 'Merge score', fmt: v => `${Number(v).toFixed(1)}%` },
+            ];
+            return (
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', margin: '0.5rem 0 1rem 0', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#a0a0a0', minWidth: '80px' }}>
+                        vs baseline<br />{new Date(baseline.captured_at).toLocaleDateString()}
+                    </div>
+                    {metrics.map(({ key, label, fmt }) => {
+                        const curr = c[key] || 0;
+                        const base = b[key] || 0;
+                        const delta = curr - base;
+                        const pct = base !== 0 ? ((delta / Math.abs(base)) * 100) : 0;
+                        const isGood = delta <= 0;
+                        return (
+                            <div key={key} style={{
+                                background: '#1a1f3a', borderRadius: '6px', padding: '0.4rem 0.6rem',
+                                border: `1px solid ${isGood ? '#4caf50' : '#ff5722'}`, minWidth: '130px'
+                            }}>
+                                <div style={{ fontSize: '0.65rem', color: '#a0a0a0' }}>{label}</div>
+                                <div style={{ fontSize: '0.95rem', color: '#e0e0e0', fontWeight: 'bold' }}>{fmt(curr)}</div>
+                                <div style={{ fontSize: '0.7rem', color: isGood ? '#4caf50' : '#ff5722' }}>
+                                    {delta === 0 ? '—' : `${isGood ? '▼' : '▲'} ${Math.abs(pct).toFixed(1)}%`}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        function DrillModal({ item, onClose }) {
+            const [turns, setTurns] = useState([]);
+            const [loading, setLoading] = useState(false);
+            useEffect(() => {
+                if (!item) return;
+                setLoading(true);
+                const sessions = item.sessions || [];
+                Promise.all(sessions.map(sid =>
+                    axios.get(`${API_BASE}/sessions/${sid}/prompts`)
+                )).then(results => {
+                    setTurns(results.flatMap(r => r.data.turns || []));
+                }).catch(console.error).finally(() => setLoading(false));
+            }, [item]);
+            if (!item) return null;
+            return (
+                <div
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '5vh' }}
+                    onClick={onClose}
+                >
+                    <div
+                        style={{ background: '#12172e', borderRadius: '8px', padding: '1.5rem', width: '90%', maxWidth: '700px', maxHeight: '75vh', overflowY: 'auto', border: '1px solid #2a3a5e' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <div style={{ fontWeight: 'bold', color: '#00bcd4', fontSize: '0.9rem' }}>
+                                {item.occurrences}x &middot; {(item.sessions || []).length} session{(item.sessions || []).length !== 1 ? 's' : ''}
+                            </div>
+                            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#e0e0e0', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                        </div>
+                        <div style={{ color: '#a0a0a0', fontSize: '0.8rem', marginBottom: '1rem', fontStyle: 'italic' }}>
+                            "{item.prompt_preview}"
+                        </div>
+                        {loading ? (
+                            <div className="loading-container"><div className="loading-spinner">⏳</div></div>
+                        ) : turns.length === 0 ? (
+                            <p style={{ color: '#a0a0a0' }}>No turns found.</p>
+                        ) : (
+                            <div className="prompt-list">
+                                {turns.map((turn, i) => (
+                                    <div className="prompt-row" key={i}>
+                                        <div className="prompt-row-head">
+                                            <span className="prompt-model">{turn.model}</span>
+                                            <span className="prompt-cost">${Number(turn.cost || 0).toFixed(4)}</span>
+                                        </div>
+                                        <div className="prompt-preview">{turn.prompt_preview}</div>
+                                        <div className="prompt-meta">
+                                            <span>{Number(turn.tokens || 0).toLocaleString()} tokens</span>
+                                            <span style={{ color: '#606880' }}>{turn.session_id}</span>
+                                            <span>{turn.timestamp ? new Date(turn.timestamp).toLocaleString() : 'N/A'}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         function Dashboard() {
             const [overview, setOverview] = useState(null);
             const [models, setModels] = useState(null);
@@ -382,6 +485,22 @@
             const [promptEndDate, setPromptEndDate] = useState('');
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
+            const [repeatedOnly, setRepeatedOnly] = useState(false);
+            const [baseline, setBaseline] = useState(null);
+            const [drillItem, setDrillItem] = useState(null);
+
+            useEffect(() => {
+                axios.get(`${API_BASE}/cost/baseline`).then(res => {
+                    if (res.data.baseline) setBaseline(res.data.baseline);
+                }).catch(() => {});
+            }, []);
+
+            const captureBaseline = async () => {
+                try {
+                    const res = await axios.post(`${API_BASE}/cost/baseline`);
+                    setBaseline(res.data.snapshot);
+                } catch (err) { console.error('Failed to capture baseline', err); }
+            };
 
             useEffect(() => {
                 const fetchData = async () => {
@@ -391,6 +510,7 @@
                         if (promptAgentId) promptParams.set('agent_id', promptAgentId);
                         if (promptStartDate) promptParams.set('start_date', promptStartDate);
                         if (promptEndDate) promptParams.set('end_date', promptEndDate);
+                        if (repeatedOnly) promptParams.set('repeated_only', 'true');
 
                         const [overviewRes, modelsRes, summaryRes, timelineRes, burnRes, promptRes] = await Promise.all([
                             axios.get(`${API_BASE}/overview`),
@@ -420,7 +540,7 @@
                 fetchData();
                 const interval = setInterval(fetchData, 15000); // Refresh every 15s
                 return () => clearInterval(interval);
-            }, [promptAgentId, promptStartDate, promptEndDate]);
+            }, [promptAgentId, promptStartDate, promptEndDate, repeatedOnly]);
 
             if (error) {
                 return (
@@ -465,11 +585,19 @@
                                 🧠 Cost By Prompt
                                 <a
                                     className="btn-export-csv"
-                                    href={`${API_BASE}/export/prompt-costs.csv?limit=1000${promptAgentId ? '&agent_id=' + promptAgentId : ''}${promptStartDate ? '&start_date=' + promptStartDate : ''}${promptEndDate ? '&end_date=' + promptEndDate : ''}`}
+                                    href={`${API_BASE}/export/prompt-costs.csv?limit=1000&mode=repeated${promptAgentId ? '&agent_id=' + promptAgentId : ''}${promptStartDate ? '&start_date=' + promptStartDate : ''}${promptEndDate ? '&end_date=' + promptEndDate : ''}`}
                                     download
                                 >
-                                    ⬇ Export CSV
+                                    ⬇ Repeated CSV
                                 </a>
+                                &nbsp;
+                                <button
+                                    className="btn-export-csv"
+                                    style={{ cursor: 'pointer', background: 'none', border: '1px solid #00bcd4', borderRadius: '4px', color: '#00bcd4', padding: '0.2rem 0.6rem', fontSize: '0.75rem' }}
+                                    onClick={captureBaseline}
+                                >
+                                    📸 Baseline
+                                </button>
                             </h2>
                             <div className="filter-bar">
                                 <label className="filter-field">
@@ -489,6 +617,10 @@
                                     <span>End date</span>
                                     <input type="date" value={promptEndDate} onChange={(event) => setPromptEndDate(event.target.value)} />
                                 </label>
+                                <label className="filter-field" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.4rem' }}>
+                                    <input type="checkbox" checked={repeatedOnly} onChange={e => setRepeatedOnly(e.target.checked)} />
+                                    <span>Repeated only</span>
+                                </label>
                                 <button
                                     className="filter-reset"
                                     type="button"
@@ -496,13 +628,15 @@
                                         setPromptAgentId('');
                                         setPromptStartDate('');
                                         setPromptEndDate('');
+                                        setRepeatedOnly(false);
                                     }}
                                 >
                                     Reset
                                 </button>
                             </div>
+                            <BaselineDelta current={promptCosts?.summary} baseline={baseline} />
                             <PromptCostAnalysis promptCosts={promptCosts} loading={loading} />
-                            <Recommendations promptCosts={promptCosts} />
+                            <Recommendations promptCosts={promptCosts} onDrillItem={setDrillItem} />
                         </div>
 
                         <div className="section">
@@ -515,6 +649,7 @@
                             <p>Last updated: {new Date().toLocaleTimeString()}</p>
                             <p>CangreDashboard v1.0 | OpenClaw Cost Intelligence</p>
                         </div>
+                        {drillItem && <DrillModal item={drillItem} onClose={() => setDrillItem(null)} />}
                     </div>
                 </div>
             );

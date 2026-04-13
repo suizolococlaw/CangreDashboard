@@ -240,7 +240,7 @@ def estimate_burn_rate(session_db, window_hours=24):
     }
 
 
-def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end_date=None):
+def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end_date=None, repeated_only=False, top_n_recommendations=10):
     """Return per-prompt cost rows and repeated-prompt hotspots."""
     from schema import Message
 
@@ -287,7 +287,6 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
         })
 
     prompt_rows.sort(key=lambda item: item['cost'], reverse=True)
-    top_rows = prompt_rows[:limit]
 
     repeated = {}
     for row in prompt_rows:
@@ -302,12 +301,25 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
             'total_tokens': 0,
             'max_cost': 0.0,
             'agents': set(),
+            'sessions': set(),
         })
         group['occurrences'] += 1
         group['total_cost'] += row['cost']
         group['total_tokens'] += row['tokens']
         group['max_cost'] = max(group['max_cost'], row['cost'])
         group['agents'].add(row['agent_id'])
+        group['sessions'].add(row['session_id'])
+
+    repeated_keys_with_multi = {
+        _normalize_prompt_key(g['prompt_preview'])
+        for g in repeated.values() if g['occurrences'] >= 2
+    }
+
+    if repeated_only:
+        filtered_rows = [r for r in prompt_rows if _normalize_prompt_key(r['prompt_preview']) in repeated_keys_with_multi]
+        top_rows = filtered_rows[:limit]
+    else:
+        top_rows = prompt_rows[:limit]
 
     repeated_rows = []
     repeated_spend = 0.0
@@ -331,6 +343,7 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
             'merge_opportunity_score': round(merge_opportunity_score, 2),
             'total_tokens': group['total_tokens'],
             'agents': sorted(group['agents']),
+            'sessions': sorted(group['sessions']),
         })
 
     repeated_rows.sort(key=lambda item: (item['total_cost'], item['occurrences']), reverse=True)
@@ -346,6 +359,7 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
             'start_date': start_date,
             'end_date': end_date,
             'limit': limit,
+            'repeated_only': repeated_only,
         },
         'summary': {
             'billable_prompts': len(prompt_rows),
@@ -357,5 +371,5 @@ def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end
             'merge_opportunity_score': round(merge_opportunity_score, 2),
         },
         'prompts': top_rows,
-        'repeated_prompts': repeated_rows[:10],
+        'repeated_prompts': repeated_rows[:top_n_recommendations],
     }

@@ -40,6 +40,18 @@ PRICING_TIERS = {
         'cache_read': 0.001,
         'cache_write': 0.001,
     },
+    'gpt-4.1': {
+        'input': 0.002,       # $2.00 per 1M input tokens
+        'output': 0.008,      # $8.00 per 1M output tokens
+        'cache_read': 0.0005, # $0.50 per 1M cached input tokens
+        'cache_write': 0.0,
+    },
+    'github-copilot/gpt-4.1': {
+        'input': 0.002,
+        'output': 0.008,
+        'cache_read': 0.0005,
+        'cache_write': 0.0,
+    },
     'default': {
         'input': 0.001,
         'output': 0.001,
