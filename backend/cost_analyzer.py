@@ -156,17 +156,17 @@ def get_cost_by_model(session_db):
     """Get cost breakdown by model."""
     from sqlalchemy import func
     from schema import Message
-    
+
     results = session_db.query(
         Message.model,
         func.sum(Message.total_tokens).label('total_tokens'),
         func.sum(Message.cost_total).label('total_cost'),
         func.count(Message.id).label('message_count'),
-    ).group_by(Message.model).all()
-    
+    ).filter(Message.model != None, Message.model != 'unknown').group_by(Message.model).all()  # noqa: E711
+
     return [
         {
-            'model': r.model or 'unknown',
+            'model': r.model,
             'total_tokens': r.total_tokens or 0,
             'total_cost': round(r.total_cost or 0.0, 4),
             'message_count': r.message_count or 0,

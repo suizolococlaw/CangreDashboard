@@ -187,7 +187,7 @@ def process_session_file(db, agent_id, filepath, agent_obj):
             
             model = msg_data.get('model') if isinstance(msg_data, dict) else None
             if not model:
-                model = event.get('model', 'unknown')
+                model = event.get('model') or None
             content_preview = _extract_content_preview(msg_data)
 
             input_tokens = _usage_value(usage, 'input', 'inputTokens', 'input_tokens')

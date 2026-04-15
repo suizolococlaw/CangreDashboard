@@ -37,11 +37,25 @@ PRICING_TIERS = {
         'cache_read': 0.00075,
         'cache_write': 0.00075,
     },
+    # OpenAI Codex (accessed via chatgpt.com web API — subscription, not billed per token)
+    # Real API pricing kept as comment; set to 0.0 while using web access.
     'gpt-5.4': {
-        'input': 0.01,
-        'output': 0.03,
-        'cache_read': 0.001,
-        'cache_write': 0.001,
+        'input': 0.0,   # real API: ~$0.01/1K in
+        'output': 0.0,  # real API: ~$0.03/1K out
+        'cache_read': 0.0,
+        'cache_write': 0.0,
+    },
+    'gpt-5.4-mini': {
+        'input': 0.0,
+        'output': 0.0,
+        'cache_read': 0.0,
+        'cache_write': 0.0,
+    },
+    'gpt-5.2': {
+        'input': 0.0,
+        'output': 0.0,
+        'cache_read': 0.0,
+        'cache_write': 0.0,
     },
     'gpt-4.1': {
         'input': 0.002,       # $2.00 per 1M input tokens
