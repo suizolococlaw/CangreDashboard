@@ -27,7 +27,8 @@
         // COMPONENTS
         // =====================================================================
 
-        function BudgetGauge({ monthCost, loading }) {
+        function BudgetGauge({ monthCost, periods, loading }) {
+            const [view, setView] = React.useState('current');
             if (loading || !monthCost) return null;
             const { current_spend, monthly_budget, pct_used, projected_month_end,
                     days_elapsed, days_remaining, days_in_month, daily_avg, budget_status, month } = monthCost;
@@ -36,46 +37,112 @@
             const headroom = Math.max(0, monthly_budget - current_spend);
             const projColor = projected_month_end > monthly_budget ? '#f44336'
                             : projected_month_end > monthly_budget * 0.9 ? '#ff9800' : '#4caf50';
+            const btnStyle = (active) => ({
+                background: active ? '#2a3f5f' : 'transparent',
+                border: '1px solid #2a3f5f',
+                color: active ? '#e0e0e0' : '#606880',
+                borderRadius: '4px',
+                padding: '0.2rem 0.75rem',
+                cursor: 'pointer',
+                fontSize: '0.72rem',
+                marginRight: '0.4rem',
+            });
+            const periodColor = (p) => p.spend > p.budget ? '#f44336' : p.spend > p.budget * 0.9 ? '#ff9800' : '#4caf50';
             return (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '0.5rem' }}>
-                    {/* Tile 1 — Current */}
-                    <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '1.2rem', borderLeft: `4px solid ${barColor}` }}>
-                        <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '0.4rem' }}>💳 Current spend — {month}</div>
-                        <div style={{ color: '#e0e0e0', fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.6rem' }}>
-                            ${Number(current_spend).toFixed(4)}
-                            <span style={{ fontSize: '0.9rem', color: '#a0a0a0', fontWeight: 'normal', marginLeft: '0.5rem' }}>/ ${monthly_budget}</span>
-                        </div>
-                        <div style={{ background: '#0a0e27', borderRadius: '4px', height: '6px', overflow: 'hidden', marginBottom: '0.4rem' }}>
-                            <div style={{ background: barColor, width: `${Math.min(pct_used, 100)}%`, height: '100%', transition: 'width 0.5s' }} />
-                        </div>
-                        <div style={{ color: barColor, fontSize: '0.75rem' }}>{Number(pct_used).toFixed(1)}% used · day {days_elapsed}/{days_in_month}</div>
+                <div>
+                    <div style={{ marginBottom: '0.75rem' }}>
+                        <button style={btnStyle(view === 'current')} onClick={() => setView('current')}>📅 Current</button>
+                        <button style={btnStyle(view === 'history')} onClick={() => setView('history')}>📊 History</button>
                     </div>
 
-                    {/* Tile 2 — Projected */}
-                    <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '1.2rem', borderLeft: `4px solid ${projColor}` }}>
-                        <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '0.4rem' }}>📈 Projected month end</div>
-                        <div style={{ color: '#e0e0e0', fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.4rem' }}>
-                            ${Number(projected_month_end).toFixed(4)}
-                        </div>
-                        <div style={{ color: '#a0a0a0', fontSize: '0.75rem' }}>
-                            ${Number(daily_avg).toFixed(4)}/day avg · {days_remaining}d remaining
-                        </div>
-                        {projected_month_end > monthly_budget && (
-                            <div style={{ color: '#f44336', fontSize: '0.75rem', marginTop: '0.3rem' }}>⚠️ Over budget by ${Number(projected_month_end - monthly_budget).toFixed(4)}</div>
-                        )}
-                    </div>
+                    {view === 'current' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '0.5rem' }}>
+                            {/* Tile 1 — Current */}
+                            <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '1.2rem', borderLeft: `4px solid ${barColor}` }}>
+                                <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '0.4rem' }}>💳 Current spend — {month}</div>
+                                <div style={{ color: '#e0e0e0', fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.6rem' }}>
+                                    ${Number(current_spend).toFixed(4)}
+                                    <span style={{ fontSize: '0.9rem', color: '#a0a0a0', fontWeight: 'normal', marginLeft: '0.5rem' }}>/ ${monthly_budget}</span>
+                                </div>
+                                <div style={{ background: '#0a0e27', borderRadius: '4px', height: '6px', overflow: 'hidden', marginBottom: '0.4rem' }}>
+                                    <div style={{ background: barColor, width: `${Math.min(pct_used, 100)}%`, height: '100%', transition: 'width 0.5s' }} />
+                                </div>
+                                <div style={{ color: barColor, fontSize: '0.75rem' }}>{Number(pct_used).toFixed(1)}% used · day {days_elapsed}/{days_in_month}</div>
+                            </div>
 
-                    {/* Tile 3 — Limit */}
-                    <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '1.2rem', borderLeft: '4px solid #9c27b0' }}>
-                        <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '0.4rem' }}>🎯 Budget cap</div>
-                        <div style={{ color: '#e0e0e0', fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.4rem' }}>
-                            ${Number(monthly_budget).toFixed(2)}
+                            {/* Tile 2 — Projected */}
+                            <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '1.2rem', borderLeft: `4px solid ${projColor}` }}>
+                                <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '0.4rem' }}>📈 Projected month end</div>
+                                <div style={{ color: '#e0e0e0', fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.4rem' }}>
+                                    ${Number(projected_month_end).toFixed(4)}
+                                </div>
+                                <div style={{ color: '#a0a0a0', fontSize: '0.75rem' }}>
+                                    ${Number(daily_avg).toFixed(4)}/day avg · {days_remaining}d remaining
+                                </div>
+                                {projected_month_end > monthly_budget && (
+                                    <div style={{ color: '#f44336', fontSize: '0.75rem', marginTop: '0.3rem' }}>⚠️ Over budget by ${Number(projected_month_end - monthly_budget).toFixed(4)}</div>
+                                )}
+                            </div>
+
+                            {/* Tile 3 — Limit */}
+                            <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '1.2rem', borderLeft: '4px solid #9c27b0' }}>
+                                <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '0.4rem' }}>🎯 Budget cap</div>
+                                <div style={{ color: '#e0e0e0', fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.4rem' }}>
+                                    ${Number(monthly_budget).toFixed(2)}
+                                </div>
+                                <div style={{ color: '#4caf50', fontSize: '0.75rem' }}>
+                                    ${Number(headroom).toFixed(4)} headroom left
+                                </div>
+                                <div style={{ color: '#606880', fontSize: '0.7rem', marginTop: '0.3rem' }}>GitHub Copilot · billing from Apr 10</div>
+                            </div>
                         </div>
-                        <div style={{ color: '#4caf50', fontSize: '0.75rem' }}>
-                            ${Number(headroom).toFixed(4)} headroom left
+                    )}
+
+                    {view === 'history' && (
+                        <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '1.2rem' }}>
+                            {(!periods || periods.length === 0) ? (
+                                <div style={{ color: '#606880', fontSize: '0.8rem' }}>No historical periods yet.</div>
+                            ) : (
+                                <>
+                                    <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '1rem' }}>📊 Monthly spend vs ${monthly_budget} budget — deviations highlighted</div>
+                                    {hasCharts && (
+                                        <ResponsiveContainer width="100%" height={200}>
+                                            <BarChart data={periods} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#2a3a5e" />
+                                                <XAxis dataKey="month" tick={{ fill: '#a0a0a0', fontSize: 11 }} />
+                                                <YAxis tick={{ fill: '#a0a0a0', fontSize: 11 }} tickFormatter={v => `$${v}`} />
+                                                <Tooltip
+                                                    contentStyle={{ background: '#12172e', border: '1px solid #2a3a5e', fontSize: '0.78rem' }}
+                                                    formatter={(v, name) => [`$${Number(v).toFixed(4)}`, name === 'spend' ? 'Spend' : 'Budget']}
+                                                />
+                                                <Bar dataKey="spend" name="spend" radius={[3,3,0,0]}>
+                                                    {periods.map((p, i) => (
+                                                        <Cell key={i} fill={p.is_setup ? '#607d8b' : periodColor(p)} />
+                                                    ))}
+                                                </Bar>
+                                                <RechartsLib.ReferenceLine y={monthly_budget} stroke="#9c27b0" strokeDasharray="4 2" label={{ value: `$${monthly_budget} cap`, fill: '#9c27b0', fontSize: 10, position: 'insideTopRight' }} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    )}
+                                    <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                        {periods.map((p, i) => (
+                                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                                                <span style={{ color: '#a0a0a0' }}>
+                                                    {p.month}
+                                                    {p.is_setup && <span style={{ color: '#607d8b', marginLeft: '0.4rem' }}>(setup)</span>}
+                                                </span>
+                                                <span style={{ color: p.is_setup ? '#607d8b' : periodColor(p) }}>
+                                                    ${p.spend.toFixed(4)} / ${p.budget} &nbsp;·&nbsp; {p.pct_used}%
+                                                    {p.deviation > 0 && !p.is_setup && <span style={{ color: '#f44336', marginLeft: '0.4rem' }}>+${p.deviation.toFixed(4)}</span>}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={{ color: '#606880', fontSize: '0.68rem', marginTop: '0.6rem' }}>Grey bars = setup/learning months, not counted against budget performance.</div>
+                                </>
+                            )}
                         </div>
-                        <div style={{ color: '#606880', fontSize: '0.7rem', marginTop: '0.3rem' }}>GitHub Copilot plan · change in config.py</div>
-                    </div>
+                    )}
                 </div>
             );
         }
@@ -170,7 +237,7 @@
             );
         }
 
-        function Overview({ overview, loading }) {
+        function Overview({ overview, loading, onRefresh }) {
             if (loading || !overview) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
 
             const formatNumber = (num) => {
@@ -210,7 +277,23 @@
                     </div>
 
                     <div style={{ gridColumn: '1 / -1' }}>
-                        <h3 className="section-title">👥 Agent Breakdown</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <h3 className="section-title" style={{ margin: 0 }}>👥 Agent Breakdown</h3>
+                            <button
+                                onClick={onRefresh}
+                                disabled={loading}
+                                style={{
+                                    background: 'none',
+                                    border: '1px solid #ff4500',
+                                    color: '#ff4500',
+                                    borderRadius: '6px',
+                                    padding: '3px 10px',
+                                    cursor: loading ? 'not-allowed' : 'pointer',
+                                    fontSize: '0.8rem',
+                                    opacity: loading ? 0.5 : 1,
+                                }}
+                            >{loading ? '⏳' : '🔄 Refresh'}</button>
+                        </div>
                         <div className="agent-list">
                             {overview.agents.map((agent) => (
                                 <div key={agent.agent_id} className="agent-card">
@@ -666,6 +749,7 @@
             const [burnRate, setBurnRate] = useState(null);
             const [promptCosts, setPromptCosts] = useState(null);
             const [monthCost, setMonthCost] = useState(null);
+            const [periods, setPeriods] = useState([]);
             const [milestones, setMilestones] = useState([]);
             const [compareTarget, setCompareTarget] = useState(null);
             const [promptAgentId, setPromptAgentId] = useState('');
@@ -718,7 +802,7 @@
                         if (promptEndDate) promptParams.set('end_date', promptEndDate);
                         if (repeatedOnly) promptParams.set('repeated_only', 'true');
 
-                        const [overviewRes, modelsRes, summaryRes, timelineRes, burnRes, promptRes, monthRes] = await Promise.all([
+                        const [overviewRes, modelsRes, summaryRes, timelineRes, burnRes, promptRes, monthRes, periodsRes] = await Promise.all([
                             axios.get(`${API_BASE}/overview`),
                             axios.get(`${API_BASE}/cost/by-model`),
                             axios.get(`${API_BASE}/metrics/summary`),
@@ -726,6 +810,7 @@
                             axios.get(`${API_BASE}/cost/burn-rate?window_hours=24`),
                             axios.get(`${API_BASE}/cost/by-prompt?${promptParams.toString()}`),
                             axios.get(`${API_BASE}/cost/month`),
+                            axios.get(`${API_BASE}/cost/periods`),
                         ]);
 
                         setOverview(overviewRes.data);
@@ -735,6 +820,7 @@
                         setBurnRate(burnRes.data);
                         setPromptCosts(promptRes.data);
                         setMonthCost(monthRes.data);
+                        setPeriods(periodsRes.data || []);
                         setError(null);
                     } catch (err) {
                         const details = err?.response?.status ? ` (HTTP ${err.response.status})` : '';
@@ -774,13 +860,13 @@
 
                     <div className="dashboard-content">
                         <div className="section">
-                            <h2 className="section-title">� Budget</h2>
-                            <BudgetGauge monthCost={monthCost} loading={loading} />
+                            <h2 className="section-title">💸 Budget</h2>
+                            <BudgetGauge monthCost={monthCost} periods={periods} loading={loading} />
                         </div>
 
                         <div className="section">
                             <h2 className="section-title">📈 Overview</h2>
-                            <Overview overview={overview} loading={loading} />
+                            <Overview overview={overview} loading={loading} onRefresh={() => setRefreshKey(k => k + 1)} />
                         </div>
 
                         <div className="section">
