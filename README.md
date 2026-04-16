@@ -2,6 +2,32 @@
 
 **Cost Intelligence Dashboard for OpenClaw** — Real-time token consumption, cost analysis, and burn rate projections.
 
+---
+
+## 🚀 Daily Startup (run these every time you boot the machine)
+
+Open two terminal tabs and run one command in each:
+
+**Terminal 1 — Backend:**
+```bash
+cd ~/github/CangreDashboard/backend && bash run.sh
+```
+
+**Terminal 2 — Frontend:**
+```bash
+cd ~/github/CangreDashboard/frontend/public && python3 -m http.server 8000
+```
+
+Then open the dashboard in your browser:
+
+```
+http://localhost:8000
+```
+
+That's it. Leave both terminals running while you work. Backend listens on `:5001`, frontend on `:8000`.
+
+---
+
 ## Overview
 
 CangreDashboard is a standalone cost intelligence system built to analyze OpenClaw agent execution and help you implement cost-saving strategies. It reads from your OpenClaw session logs, calculates costs based on configurable pricing tiers, and presents insights through an interactive dashboard.
