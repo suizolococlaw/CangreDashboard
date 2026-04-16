@@ -241,6 +241,10 @@
         }
 
         function Overview({ overview, loading, onRefresh }) {
+            const [showSessions, setShowSessions] = React.useState(false);
+            const [activeSessions, setActiveSessions] = React.useState([]);
+            const [sessionsLoading, setSessionsLoading] = React.useState(false);
+
             if (loading || !overview) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
 
             const formatNumber = (num) => {
@@ -249,34 +253,29 @@
                 return num.toString();
             };
 
-            const costChangeColor = overview.cost_change_pct >= 0 ? 'negative' : 'positive';
+            const toggleSessions = async () => {
+                if (showSessions) { setShowSessions(false); return; }
+                setSessionsLoading(true);
+                try {
+                    const res = await axios.get(`${API_BASE}/sessions?status=active&limit=20`);
+                    setActiveSessions(res.data || []);
+                } catch (e) { setActiveSessions([]); }
+                setSessionsLoading(false);
+                setShowSessions(true);
+            };
 
             return (
                 <div className="overview-grid">
-                    <div className="stat-tile">
-                        <div className="stat-label">💰 Total Cost (Today)</div>
-                        <div className="stat-value">${overview.total_cost_today.toFixed(4)}</div>
-                        <div className={`stat-change ${costChangeColor}`}>
-                            {overview.cost_change_pct > 0 ? '📈' : '📉'} ${Math.abs(overview.cost_vs_yesterday).toFixed(4)} ({Math.abs(overview.cost_change_pct).toFixed(1)}%)
-                        </div>
-                    </div>
-
-                    <div className="stat-tile">
-                        <div className="stat-label">📊 Total Tokens (Today)</div>
-                        <div className="stat-value">{formatNumber(overview.total_tokens_today)}</div>
-                        <div className="stat-subtext">{overview.session_count_today} sessions</div>
-                    </div>
-
-                    <div className="stat-tile">
+                    <div className="stat-tile" onClick={toggleSessions} style={{ cursor: 'pointer' }}>
                         <div className="stat-label">🔄 Active Sessions</div>
                         <div className="stat-value">{overview.active_sessions}</div>
-                        <div className="stat-subtext">Currently running</div>
+                        <div className="stat-subtext">{showSessions ? '▲ hide' : '▼ tap to expand'}</div>
                     </div>
 
                     <div className="stat-tile">
                         <div className="stat-label">🤖 Active Agents</div>
                         <div className="stat-value">{overview.agents.length}</div>
-                        <div className="stat-subtext">Configured & tracked</div>
+                        <div className="stat-subtext">{overview.agents.map(a => a.name || a.agent_id).join(', ')}</div>
                     </div>
 
                     {showSessions && (
