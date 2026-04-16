@@ -8,7 +8,7 @@ from pathlib import Path
 from collections import defaultdict
 from schema import SessionLocal, Agent, Session, Message, DailyMetric, init_db
 from cost_analyzer import calculate_message_cost
-from config import AGENTS_DIR, RETENTION_DAYS
+from config import AGENTS_DIR, RETENTION_DAYS, get_active_agent_ids
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -281,8 +281,10 @@ def full_scan():
         logger.error(f'Agents directory not found: {AGENTS_DIR}')
         return
 
+    # Use openclaw.json as source of truth for active agents
+    active_agent_ids = get_active_agent_ids()
     agent_count = 0
-    for agent_dir in os.listdir(AGENTS_DIR):
+    for agent_dir in active_agent_ids:
         agent_path = os.path.join(AGENTS_DIR, agent_dir)
         if os.path.isdir(agent_path):
             try:
@@ -290,6 +292,17 @@ def full_scan():
                 agent_count += 1
             except Exception as e:
                 logger.error(f'Error processing agent {agent_dir}: {e}')
+
+    # Prune DB agents no longer in openclaw.json
+    db = SessionLocal()
+    try:
+        stale_agents = db.query(Agent).filter(Agent.agent_id.notin_(active_agent_ids)).all()
+        for stale in stale_agents:
+            logger.info(f'Removing stale agent from DB: {stale.agent_id}')
+            db.delete(stale)
+        db.commit()
+    finally:
+        db.close()
 
     logger.info(f'Full scan complete. Processed {agent_count} agents')
     logger.info('=' * 60)

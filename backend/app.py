@@ -14,7 +14,7 @@ from cost_analyzer import (
     aggregate_daily_costs, get_cost_summary, get_cost_by_agent, 
     get_cost_by_model, get_cost_trend, estimate_burn_rate, get_cost_by_prompt
 )
-from config import FLASK_HOST, FLASK_PORT, DEBUG, validate_config, MONTHLY_BUDGET
+from config import FLASK_HOST, FLASK_PORT, DEBUG, validate_config, MONTHLY_BUDGET, COPILOT_START_DATE, SETUP_MONTHS, get_active_agent_ids
 import threading
 import time
 import logging
@@ -72,18 +72,26 @@ def overview():
         # Active sessions
         active_sessions = db.query(Session).filter_by(status='active').count()
         
-        # Agent list with stats
-        agents = db.query(Agent).all()
+        # Agent list with stats — all agents currently defined in openclaw.json
+        active_ids = get_active_agent_ids()
+        db_agents = {a.agent_id: a for a in db.query(Agent).all()}
         agent_stats = []
-        for agent in agents:
-            agent_tokens = db.query(func.sum(Message.total_tokens)).filter_by(agent_id=agent.agent_id).scalar() or 0
-            agent_cost = db.query(func.sum(Message.cost_total)).filter_by(agent_id=agent.agent_id).scalar() or 0.0
+        for agent_id in sorted(active_ids):
+            agent = db_agents.get(agent_id)
+            if agent:
+                agent_tokens = db.query(func.sum(Message.total_tokens)).filter_by(agent_id=agent_id).scalar() or 0
+                agent_cost = db.query(func.sum(Message.cost_total)).filter_by(agent_id=agent_id).scalar() or 0.0
+                last_activity = agent.last_activity.isoformat() if agent.last_activity else None
+            else:
+                agent_tokens = 0
+                agent_cost = 0.0
+                last_activity = None
             agent_stats.append({
-                'agent_id': agent.agent_id,
-                'name': agent.agent_name,
+                'agent_id': agent_id,
+                'name': agent.agent_name if agent else agent_id,
                 'total_tokens': agent_tokens,
                 'total_cost': round(agent_cost, 4),
-                'last_activity': agent.last_activity.isoformat() if agent.last_activity else None
+                'last_activity': last_activity
             })
         
         cost_vs_yesterday = round(total_cost_today - total_cost_yesterday, 4) if total_cost_yesterday > 0 else 0
@@ -227,21 +235,29 @@ def cost_burn_rate():
 
 @app.route('/api/cost/month', methods=['GET'])
 def cost_this_month():
-    """Return current-month spend vs budget cap."""
+    """Return current-month spend vs budget cap (filtered to GitHub Copilot era)."""
     db = SessionLocal()
     try:
+        import calendar
         now = datetime.utcnow()
         ym = now.strftime('%Y-%m')
+
+        start_of_month = datetime(now.year, now.month, 1)
+        copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
+        billing_start = max(start_of_month, copilot_start)
+
         total_spend = db.query(func.sum(Message.cost_total)).filter(
-            func.strftime('%Y-%m', Message.timestamp) == ym
+            func.strftime('%Y-%m', Message.timestamp) == ym,
+            Message.timestamp >= billing_start,
         ).scalar() or 0.0
 
-        import calendar
         days_in_month = calendar.monthrange(now.year, now.month)[1]
-        days_elapsed = now.day
-        days_remaining = days_in_month - days_elapsed
+        end_of_month = datetime(now.year, now.month, days_in_month)
+        billing_period_days = (end_of_month - billing_start).days + 1
+        days_elapsed = max(1, (now - billing_start).days + 1)
+        days_remaining = max(0, days_in_month - now.day)
         daily_avg = total_spend / days_elapsed if days_elapsed > 0 else 0.0
-        projected = daily_avg * days_in_month
+        projected = daily_avg * billing_period_days
         pct_used = (total_spend / MONTHLY_BUDGET * 100) if MONTHLY_BUDGET > 0 else 0.0
         if pct_used < 70:
             status = 'ok'
@@ -257,10 +273,46 @@ def cost_this_month():
             'days_elapsed': days_elapsed,
             'days_remaining': days_remaining,
             'days_in_month': days_in_month,
+            'billing_period_days': billing_period_days,
             'projected_month_end': round(projected, 4),
             'daily_avg': round(daily_avg, 6),
             'budget_status': status,
         })
+    finally:
+        db.close()
+
+
+@app.route('/api/cost/periods', methods=['GET'])
+def cost_periods():
+    """Return per-month spend history from Copilot start date."""
+    db = SessionLocal()
+    try:
+        copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
+        results = db.query(
+            func.strftime('%Y-%m', Message.timestamp).label('month'),
+            func.sum(Message.cost_total).label('spend'),
+        ).filter(
+            Message.timestamp >= copilot_start,
+        ).group_by(
+            func.strftime('%Y-%m', Message.timestamp)
+        ).order_by('month').all()
+
+        periods = []
+        for r in results:
+            spend = round(r.spend or 0.0, 4)
+            pct = round(spend / MONTHLY_BUDGET * 100, 1) if MONTHLY_BUDGET > 0 else 0.0
+            deviation = round(spend - MONTHLY_BUDGET, 4)
+            is_setup = r.month in SETUP_MONTHS
+            periods.append({
+                'month': r.month,
+                'spend': spend,
+                'budget': MONTHLY_BUDGET,
+                'pct_used': pct,
+                'deviation': deviation,
+                'is_setup': is_setup,
+                'note': 'setup/learning' if is_setup else None,
+            })
+        return jsonify(periods)
     finally:
         db.close()
 
