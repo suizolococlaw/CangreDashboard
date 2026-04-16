@@ -1,6 +1,6 @@
 """Cost analysis engine for OpenClaw token consumption."""
 
-from config import get_pricing
+from config import get_pricing, COPILOT_START_DATE
 import logging
 import re
 from datetime import datetime, timedelta
@@ -107,15 +107,16 @@ def aggregate_daily_costs(session_db):
     logger.info(f'Aggregated costs into daily metrics for {len(results)} date/agent/model combinations')
 
 def get_cost_summary(session_db):
-    """Get overall cost summary (all time)."""
+    """Get overall cost summary (GitHub Copilot era only)."""
     from sqlalchemy import func
     from schema import Message
     
+    copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
     result = session_db.query(
         func.sum(Message.total_tokens).label('total_tokens'),
         func.sum(Message.cost_total).label('total_cost'),
         func.count(Message.id).label('total_messages'),
-    ).first()
+    ).filter(Message.timestamp >= copilot_start).first()
     
     total_tokens = result.total_tokens or 0
     total_cost = result.total_cost or 0.0
@@ -131,17 +132,18 @@ def get_cost_summary(session_db):
     }
 
 def get_cost_by_agent(session_db):
-    """Get cost breakdown by agent."""
+    """Get cost breakdown by agent (GitHub Copilot era only)."""
     from sqlalchemy import func
     from schema import Message
     from datetime import datetime, timedelta
     
+    copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
     results = session_db.query(
         Message.agent_id,
         func.sum(Message.total_tokens).label('total_tokens'),
         func.sum(Message.cost_total).label('total_cost'),
         func.count(Message.id).label('message_count'),
-    ).group_by(Message.agent_id).all()
+    ).filter(Message.timestamp >= copilot_start).group_by(Message.agent_id).all()
     
     return [
         {
@@ -153,16 +155,20 @@ def get_cost_by_agent(session_db):
     ]
 
 def get_cost_by_model(session_db):
-    """Get cost breakdown by model."""
+    """Get cost breakdown by model (GitHub Copilot era only)."""
     from sqlalchemy import func
     from schema import Message
 
+    copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
     results = session_db.query(
         Message.model,
         func.sum(Message.total_tokens).label('total_tokens'),
         func.sum(Message.cost_total).label('total_cost'),
         func.count(Message.id).label('message_count'),
-    ).filter(Message.model != None, Message.model != 'unknown').group_by(Message.model).all()  # noqa: E711
+    ).filter(
+        Message.model != None, Message.model != 'unknown',  # noqa: E711
+        Message.timestamp >= copilot_start,
+    ).group_by(Message.model).all()
 
     return [
         {
@@ -174,15 +180,18 @@ def get_cost_by_model(session_db):
     ]
 
 def get_cost_trend(session_db, days=7):
-    """Get daily cost trend for last N days."""
+    """Get daily cost trend for last N days (GitHub Copilot era only)."""
     from sqlalchemy import func
     from schema import DailyMetric
     from datetime import datetime, timedelta
     
+    copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
     results = session_db.query(
         DailyMetric.metric_date,
         func.sum(DailyMetric.total_cost).label('daily_cost'),
         func.sum(DailyMetric.total_tokens).label('daily_tokens'),
+    ).filter(
+        DailyMetric.metric_date >= copilot_start.strftime('%Y-%m-%d')
     ).group_by(DailyMetric.metric_date).order_by(DailyMetric.metric_date.desc()).limit(days).all()
     
     return [

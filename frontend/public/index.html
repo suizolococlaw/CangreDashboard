@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#000000">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>CangreDashboard - Cost Intelligence for OpenClaw</title>
     <link rel="stylesheet" href="./index.css">
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -276,6 +279,37 @@
                         <div className="stat-subtext">Configured & tracked</div>
                     </div>
 
+                    {showSessions && (
+                        <div style={{ gridColumn: '1 / -1', marginTop: '-0.5rem', marginBottom: '0.5rem' }}>
+                            {sessionsLoading ? (
+                                <div style={{ color: '#a0a0a0', fontSize: '0.85rem', padding: '0.5rem' }}>Loading…</div>
+                            ) : activeSessions.length === 0 ? (
+                                <div style={{ color: '#a0a0a0', fontSize: '0.85rem', padding: '0.5rem' }}>No active sessions right now.</div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', color: '#c0c0c0' }}>
+                                    <thead>
+                                        <tr style={{ color: '#a0a0a0', borderBottom: '1px solid #2a3f5f' }}>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Agent</th>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Channel</th>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Started</th>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Messages</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {activeSessions.map((s, i) => (
+                                            <tr key={s.session_id || i} style={{ borderBottom: '1px solid #1a2040' }}>
+                                                <td style={{ padding: '4px 8px' }}>{s.agent_id}</td>
+                                                <td style={{ padding: '4px 8px' }}>{s.channel || '—'}</td>
+                                                <td style={{ padding: '4px 8px' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
+                                                <td style={{ padding: '4px 8px' }}>{s.message_count ?? '—'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
+
                     <div style={{ gridColumn: '1 / -1' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <h3 className="section-title" style={{ margin: 0 }}>👥 Agent Breakdown</h3>
@@ -347,7 +381,7 @@
                                     </div>
                                     <div className="agent-stat">
                                         <span className="agent-stat-label">Cost</span>
-                                        <span className="agent-stat-value">${m.total_cost.toFixed(4)}</span>
+                                        <span className="agent-stat-value">{m.total_cost === 0 ? 'Free' : '$' + m.total_cost.toFixed(4)}</span>
                                     </div>
                                 </div>
                             ))}
@@ -386,7 +420,7 @@
                     <div className="chart-container">
                         <div className="chart-title">💵 Cost by Model</div>
                         <ResponsiveContainer width="100%" height={250}>
-                            <BarChart data={normalizedModels}>
+                            <BarChart data={normalizedModels.filter(m => m.total_cost > 0)}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#2a3f5f" />
                                 <XAxis dataKey="model" stroke="#a0a0a0" angle={-45} textAnchor="end" height={80} />
                                 <YAxis stroke="#a0a0a0" />
@@ -866,7 +900,10 @@
 
                         <div className="section">
                             <h2 className="section-title">📈 Overview</h2>
-                            <Overview overview={overview} loading={loading} onRefresh={() => setRefreshKey(k => k + 1)} />
+                            <Overview overview={overview} loading={loading} onRefresh={async () => {
+                                try { await axios.post(`${API_BASE}/admin/rescan`); } catch(e) {}
+                                setTimeout(() => setRefreshKey(k => k + 1), 800);
+                            }} />
                         </div>
 
                         <div className="section">

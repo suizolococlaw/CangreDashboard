@@ -73,10 +73,11 @@ def overview():
         active_sessions = db.query(Session).filter_by(status='active').count()
         
         # Agent list with stats — all agents currently defined in openclaw.json
+        # cangrejo is always first (primary agent), rest alphabetical
         active_ids = get_active_agent_ids()
         db_agents = {a.agent_id: a for a in db.query(Agent).all()}
         agent_stats = []
-        for agent_id in sorted(active_ids):
+        for agent_id in sorted(active_ids, key=lambda x: (0 if x == 'cangrejo' else 1, x)):
             agent = db_agents.get(agent_id)
             if agent:
                 agent_tokens = db.query(func.sum(Message.total_tokens)).filter_by(agent_id=agent_id).scalar() or 0
