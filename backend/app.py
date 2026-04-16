@@ -364,7 +364,7 @@ def cost_by_prompt():
                     last_seen_dt = datetime.fromisoformat(last_seen_str) if last_seen_str else None
                     if last_seen_dt and last_seen_dt > ack_dt:
                         item['resolution_status'] = 'regressed'
-                    elif days_since >= 7:
+                    elif days_since >= 1:  # TEST: 1 day (normally 7)
                         item['resolution_status'] = 'resolved'
                     else:
                         item['resolution_status'] = 'watching'
@@ -372,7 +372,7 @@ def cost_by_prompt():
                     item['resolution_status'] = 'watching'
             else:
                 item['acknowledged_at'] = None
-                item['resolution_status'] = 'resolved' if days_since >= 7 else 'active'
+                item['resolution_status'] = 'resolved' if days_since >= 1 else 'active'  # TEST: 1 day (normally 7)
         return jsonify(payload)
     finally:
         db.close()
