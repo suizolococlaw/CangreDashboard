@@ -77,9 +77,28 @@ PRICING_TIERS = {
     }
 }
 
+# Model name prefixes that are always free (GitHub Copilot included)
+_FREE_PREFIXES = ('gpt-4o', 'gpt-4.1', 'gpt-4o-mini', 'gpt-5', 'github-copilot/')
+_FREE_PRICE = {'input': 0.0, 'output': 0.0, 'cache_read': 0.0, 'cache_write': 0.0}
+
 def get_pricing(model):
-    """Get pricing for a model, fallback to default."""
-    return PRICING_TIERS.get(model, PRICING_TIERS['default'])
+    """Get pricing for a model.
+    Order: exact match → prefix match against PRICING_TIERS keys → known free families → default.
+    Handles version suffixes like gpt-4.1-2025-04-14.
+    """
+    if not model:
+        return PRICING_TIERS['default']
+    if model in PRICING_TIERS:
+        return PRICING_TIERS[model]
+    model_lower = model.lower()
+    # Prefix match against explicit tiers (catches versioned names)
+    for key in PRICING_TIERS:
+        if key != 'default' and model_lower.startswith(key.lower()):
+            return PRICING_TIERS[key]
+    # Catch any other free model families not explicitly listed
+    if any(model_lower.startswith(p) for p in _FREE_PREFIXES):
+        return _FREE_PRICE
+    return PRICING_TIERS['default']
 
 def validate_config():
     """Validate that required directories exist."""
