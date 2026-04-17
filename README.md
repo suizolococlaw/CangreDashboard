@@ -137,6 +137,37 @@ python3 -m http.server 8000
 
 ---
 
+## Cron Jobs: Live Status & Troubleshooting
+
+The Cron Jobs section now shows real-time status for every job, including whether it is running, stuck, finished, or errored. This is done **without polling the agent or burning tokens**.
+
+### How it works
+- The backend reads each job's `~/.openclaw/cron/runs/<job_id>.jsonl` file.
+- If `jobs.json` shows `lastRunAtMs` newer than the most recent `runAtMs` in that file, the job is currently running.
+- If a job is running for more than 3× its typical duration (or >45min with no baseline), it is flagged as **stuck**.
+- The dashboard auto-refreshes every 15s, so you see elapsed time live.
+- Click the ▸ next to a job name to expand and see the last run's output summary and token usage.
+
+### Status Badges
+
+| Badge | Meaning |
+|---|---|
+| 🔄 Running · 2h 14m | Currently executing, elapsed time updates live |
+| ⚠️ Stuck · 3h 05m | Running >3× typical duration or >45min |
+| ✅ Done | Last run succeeded |
+| ❌ Error ×2 | Last run failed, with consecutive error count |
+| ⚪ idle | Never triggered |
+
+### Example: Socrates Audit
+If you launch a long-running audit job (e.g. Socrates), the dashboard will show:
+- **🔄 Running** while the job is in progress
+- **⚠️ Stuck** if it exceeds expected duration
+- **✅ Done** or **❌ Error** when finished
+
+No more guessing or burning tokens to ask for status!
+
+---
+
 ## Data & Storage
 
 ### Database Location

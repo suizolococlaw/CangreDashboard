@@ -3,7 +3,8 @@ import json
 from pathlib import Path
 
 # Data source configuration
-OPENCLAW_HOME = os.getenv('OPENCLAW_HOME', os.path.expanduser('~/.openclaw'))
+_DEFAULT_OPENCLAW_HOME = '/tmp/.openclaw' if os.getenv('VERCEL') else os.path.expanduser('~/.openclaw')
+OPENCLAW_HOME = os.getenv('OPENCLAW_HOME', _DEFAULT_OPENCLAW_HOME)
 AGENTS_DIR = os.path.join(OPENCLAW_HOME, 'agents')
 LOGS_DIR = os.path.join(OPENCLAW_HOME, 'logs')
 
@@ -28,7 +29,11 @@ def get_active_agent_ids():
 
 # Database configuration
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.expanduser('~/.openclaw/cangre_dashboard.db')
+DB_PATH = os.getenv('DB_PATH', os.path.join(OPENCLAW_HOME, 'cangre_dashboard.db'))
+try:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+except Exception:
+    pass
 DATABASE_URL = f'sqlite:///{DB_PATH}'
 
 # Flask configuration
@@ -101,11 +106,22 @@ def get_pricing(model):
     return PRICING_TIERS['default']
 
 def validate_config():
-    """Validate that required directories exist."""
-    if not os.path.isdir(AGENTS_DIR):
-        raise Exception(f'AGENTS_DIR not found: {AGENTS_DIR}')
-    if not os.path.isdir(LOGS_DIR):
-        raise Exception(f'LOGS_DIR not found: {LOGS_DIR}')
+    """Validate that required directories exist.
+
+    Returns True when source directories are available, otherwise False.
+    """
+    has_agents = os.path.isdir(AGENTS_DIR)
+    has_logs = os.path.isdir(LOGS_DIR)
+
+    if not has_agents or not has_logs:
+        print('⚠ Config partially available')
+        print(f'  - OPENCLAW_HOME: {OPENCLAW_HOME}')
+        print(f'  - DB_PATH: {DB_PATH}')
+        print(f'  - AGENTS_DIR exists: {has_agents}')
+        print(f'  - LOGS_DIR exists: {has_logs}')
+        return False
+
     print(f'✓ Config validated')
     print(f'  - OPENCLAW_HOME: {OPENCLAW_HOME}')
     print(f'  - DB_PATH: {DB_PATH}')
+    return True

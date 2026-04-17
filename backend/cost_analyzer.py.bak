@@ -1,9 +1,6 @@
 """Cost analysis engine for OpenClaw token consumption."""
 
-try:
-    from config import get_pricing, COPILOT_START_DATE
-except ImportError:
-    from backend.config import get_pricing, COPILOT_START_DATE
+from config import get_pricing, COPILOT_START_DATE
 import logging
 import re
 from datetime import datetime, timedelta
@@ -58,10 +55,7 @@ def aggregate_daily_costs(session_db):
         session_db: SQLAlchemy session
     """
     from sqlalchemy import func, text
-    try:
-        from schema import Message, DailyMetric
-    except ImportError:
-        from backend.schema import Message, DailyMetric
+    from schema import Message, DailyMetric
     
     # Clear today's metrics (will be recalculated)
     from datetime import datetime
@@ -115,10 +109,7 @@ def aggregate_daily_costs(session_db):
 def get_cost_summary(session_db):
     """Get overall cost summary (GitHub Copilot era only)."""
     from sqlalchemy import func
-    try:
-        from schema import Message
-    except ImportError:
-        from backend.schema import Message
+    from schema import Message
     
     copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
     result = session_db.query(
@@ -143,10 +134,7 @@ def get_cost_summary(session_db):
 def get_cost_by_agent(session_db):
     """Get cost breakdown by agent (GitHub Copilot era only)."""
     from sqlalchemy import func
-    try:
-        from schema import Message
-    except ImportError:
-        from backend.schema import Message
+    from schema import Message
     from datetime import datetime, timedelta
     
     copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
@@ -169,10 +157,7 @@ def get_cost_by_agent(session_db):
 def get_cost_by_model(session_db):
     """Get cost breakdown by model (GitHub Copilot era only)."""
     from sqlalchemy import func
-    try:
-        from schema import Message
-    except ImportError:
-        from backend.schema import Message
+    from schema import Message
 
     copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
     results = session_db.query(
@@ -197,10 +182,7 @@ def get_cost_by_model(session_db):
 def get_cost_trend(session_db, days=7):
     """Get daily cost trend for last N days (GitHub Copilot era only)."""
     from sqlalchemy import func
-    try:
-        from schema import DailyMetric
-    except ImportError:
-        from backend.schema import DailyMetric
+    from schema import DailyMetric
     from datetime import datetime, timedelta
     
     copilot_start = datetime.fromisoformat(COPILOT_START_DATE)
@@ -229,10 +211,7 @@ def estimate_burn_rate(session_db, window_hours=24):
         window_hours: Look at last N hours
     """
     from sqlalchemy import func
-    try:
-        from schema import Message
-    except ImportError:
-        from backend.schema import Message
+    from schema import Message
     from datetime import datetime, timedelta
     
     cutoff = datetime.utcnow() - timedelta(hours=window_hours)
@@ -272,10 +251,7 @@ def estimate_burn_rate(session_db, window_hours=24):
 
 def get_cost_by_prompt(session_db, limit=25, agent_id=None, start_date=None, end_date=None, repeated_only=False, top_n_recommendations=10):
     """Return per-prompt cost rows and repeated-prompt hotspots."""
-    try:
-        from schema import Message
-    except ImportError:
-        from backend.schema import Message
+    from schema import Message
 
     query = session_db.query(Message).order_by(Message.session_id.asc(), Message.timestamp.asc(), Message.id.asc())
     if agent_id:

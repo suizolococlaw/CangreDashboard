@@ -25,12 +25,7 @@
         const hasCharts = !!window.Recharts;
         const { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } = RechartsLib;
 
-        const API_BASE = (() => {
-            if (window.CANGRE_API_BASE) return window.CANGRE_API_BASE;
-            const host = window.location.hostname;
-            if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:5001/api';
-            return '/api';
-        })();
+        const API_BASE = 'http://localhost:5001/api';
 
         // =====================================================================
         // COMPONENTS
@@ -441,15 +436,13 @@
             );
         }
 
-        function BurnRate({ burnRate, loading, trend }) {
+        function BurnRate({ burnRate, loading }) {
             if (loading || !burnRate) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
-
-            const trendData = (trend || []).map(d => ({ date: d.date, cost: d.total_cost }));
 
             return (
                 <div className="chart-container">
                     <div className="chart-title">🔥 Burn Rate & Projections (Last {burnRate.window_hours}h)</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
                         <div style={{ background: 'rgba(255, 69, 0, 0.1)', padding: '1rem', borderRadius: '4px', borderLeft: '3px solid #ff4500' }}>
                             <div style={{ color: '#a0a0a0', fontSize: '0.85rem' }}>Cost per Hour</div>
                             <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#ff4500' }}>${burnRate.cost_per_hour.toFixed(6)}</div>
@@ -467,23 +460,6 @@
                             <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#00bcd4' }}>{burnRate.tokens_per_hour.toLocaleString()}</div>
                         </div>
                     </div>
-                    {hasCharts && trendData.length > 1 && (
-                        <div style={{ marginTop: '1.5rem' }}>
-                            <div style={{ color: '#a0a0a0', fontSize: '0.75rem', marginBottom: '0.5rem' }}>📈 7-day daily cost trend</div>
-                            <ResponsiveContainer width="100%" height={120}>
-                                <LineChart data={trendData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#1a2040" />
-                                    <XAxis dataKey="date" tick={{ fill: '#a0a0a0', fontSize: 10 }} />
-                                    <YAxis tick={{ fill: '#a0a0a0', fontSize: 10 }} tickFormatter={v => `$${v.toFixed(3)}`} width={60} />
-                                    <Tooltip
-                                        contentStyle={{ background: '#12172e', border: '1px solid #2a3a5e', fontSize: '0.78rem' }}
-                                        formatter={v => [`$${Number(v).toFixed(4)}`, 'Cost']}
-                                    />
-                                    <Line type="monotone" dataKey="cost" stroke="#ff4500" strokeWidth={2} dot={{ r: 3, fill: '#ff4500' }} />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
-                    )}
                 </div>
             );
         }
@@ -696,7 +672,6 @@
                             <div className="timeline-agent">🦞 {item.agent_id}</div>
                             <div className="timeline-model">{item.model} · {item.role}</div>
                             <div className="timeline-tokens">{formatTokens(item.tokens)} 🔤</div>
-                            {item.cost > 0 && <div style={{ fontSize: '0.72rem', color: '#ff9800', whiteSpace: 'nowrap' }}>${Number(item.cost).toFixed(4)}</div>}
                         </div>
                     ))}
                 </div>
@@ -1082,8 +1057,6 @@
             const [showSessions, setShowSessions] = React.useState(false);
             const [activeSessions, setActiveSessions] = React.useState([]);
             const [sessionsLoading, setSessionsLoading] = React.useState(false);
-            const [expandedAgent, setExpandedAgent] = React.useState(null);
-            const [agentTrend, setAgentTrend] = React.useState({});
 
             if (loading || !overview) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
 
@@ -1102,17 +1075,6 @@
                 } catch (e) { setActiveSessions([]); }
                 setSessionsLoading(false);
                 setShowSessions(true);
-            };
-
-            const toggleAgent = async (agentId) => {
-                if (expandedAgent === agentId) { setExpandedAgent(null); return; }
-                setExpandedAgent(agentId);
-                if (!agentTrend[agentId]) {
-                    try {
-                        const res = await axios.get(`${API_BASE}/agents/${agentId}/daily?days=7`);
-                        setAgentTrend(prev => ({ ...prev, [agentId]: res.data }));
-                    } catch (_) {}
-                }
             };
 
             return (
@@ -1166,217 +1128,47 @@
                     )}
 
                     <div className="agent-list">
-                        {overview.agents.map((agent) => {
-                            const isExpanded = expandedAgent === agent.agent_id;
-                            const trend = agentTrend[agent.agent_id] || [];
-                            return (
-                                <div key={agent.agent_id} className="agent-card" style={{ cursor: 'pointer' }} onClick={() => toggleAgent(agent.agent_id)}>
-                                    <div className="agent-name">🦞 {agent.name || agent.agent_id} <span style={{ fontSize: '0.65rem', color: '#00bcd4', marginLeft: 4 }}>{isExpanded ? '▾' : '▸'}</span></div>
-                                    <div className="agent-stat">
-                                        <span className="agent-stat-label">Today's cost:</span>
-                                        <span className="agent-stat-value" style={{ color: agent.cost_today > 0 ? '#ff9800' : '#606880' }}>${Number(agent.cost_today || 0).toFixed(4)}</span>
-                                    </div>
-                                    <div className="agent-stat">
-                                        <span className="agent-stat-label">Tokens (Total):</span>
-                                        <span className="agent-stat-value">{formatNumber(agent.total_tokens)}</span>
-                                    </div>
-                                    <div className="agent-stat">
-                                        <span className="agent-stat-label">Cost (Total):</span>
-                                        <span className="agent-stat-value">${agent.total_cost.toFixed(4)}</span>
-                                    </div>
-                                    <div className="agent-stat">
-                                        <span className="agent-stat-label">Last Activity:</span>
-                                        <span className="agent-stat-value" style={{ fontSize: '0.75rem' }}>
-                                            {agent.last_activity ? new Date(agent.last_activity).toLocaleString() : 'N/A'}
-                                        </span>
-                                    </div>
-                                    {isExpanded && hasCharts && trend.length > 0 && (
-                                        <div style={{ marginTop: '0.75rem' }} onClick={e => e.stopPropagation()}>
-                                            <div style={{ fontSize: '0.68rem', color: '#a0a0a0', marginBottom: '0.3rem' }}>7-day cost</div>
-                                            <ResponsiveContainer width="100%" height={80}>
-                                                <BarChart data={trend} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
-                                                    <XAxis dataKey="date" tick={{ fill: '#606880', fontSize: 9 }} tickFormatter={d => d.slice(5)} />
-                                                    <Tooltip
-                                                        contentStyle={{ background: '#12172e', border: '1px solid #2a3a5e', fontSize: '0.72rem' }}
-                                                        formatter={v => [`$${Number(v).toFixed(4)}`, 'Cost']}
-                                                    />
-                                                    <Bar dataKey="cost" fill="#ff9800" radius={[2,2,0,0]} />
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    )}
+                        {overview.agents.map((agent) => (
+                            <div key={agent.agent_id} className="agent-card">
+                                <div className="agent-name">🦞 {agent.name || agent.agent_id}</div>
+                                <div className="agent-stat">
+                                    <span className="agent-stat-label">Tokens (Total):</span>
+                                    <span className="agent-stat-value">{formatNumber(agent.total_tokens)}</span>
                                 </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            );
-        }
-
-        function DailyBudgetAlert({ burnRate, monthCost }) {
-            const DAILY_WARN_PCT = 0.15; // warn if today's projected daily spend > 15% of monthly budget
-            if (!burnRate || !monthCost) return null;
-            const dailyBudget = monthCost.monthly_budget / monthCost.days_in_month;
-            const projDaily = burnRate.projected_daily_cost;
-            const ratio = dailyBudget > 0 ? projDaily / dailyBudget : 0;
-            if (ratio < 1.2) return null; // only show when >120% of daily budget
-            const isExtreme = ratio >= 2;
-            return (
-                <div style={{
-                    background: isExtreme ? 'rgba(244,67,54,0.15)' : 'rgba(255,152,0,0.12)',
-                    border: `1px solid ${isExtreme ? '#f44336' : '#ff9800'}`,
-                    borderRadius: '6px',
-                    padding: '0.6rem 1rem',
-                    margin: '0 2rem 1rem 2rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    fontSize: '0.85rem',
-                }}>
-                    <span style={{ fontSize: '1.2rem' }}>{isExtreme ? '🚨' : '⚠️'}</span>
-                    <span style={{ color: isExtreme ? '#f44336' : '#ff9800', fontWeight: 'bold' }}>
-                        Daily burn alert:
-                    </span>
-                    <span style={{ color: '#e0e0e0' }}>
-                        Projected daily cost <strong>${projDaily.toFixed(4)}</strong> is{' '}
-                        <strong>{(ratio * 100 - 100).toFixed(0)}% above</strong> your daily budget of ${dailyBudget.toFixed(4)}
-                    </span>
-                </div>
-            );
-        }
-
-        function SessionLeaderboard() {
-            const [sessions, setSessions] = React.useState([]);
-            const [loading, setLoading] = React.useState(true);
-            const [drillSession, setDrillSession] = React.useState(null);
-
-            React.useEffect(() => {
-                const load = async () => {
-                    try {
-                        const res = await axios.get(`${API_BASE}/sessions/leaderboard?limit=10`);
-                        setSessions(res.data || []);
-                    } catch (_) {}
-                    setLoading(false);
-                };
-                load();
-            }, []);
-
-            if (loading) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
-            if (sessions.length === 0) return <div className="empty-state"><p>No session cost data yet.</p></div>;
-
-            const fmtDur = (startIso, endIso) => {
-                if (!startIso || !endIso) return '—';
-                const ms = new Date(endIso) - new Date(startIso);
-                if (ms < 0) return '—';
-                const m = Math.floor(ms / 60000);
-                if (m < 60) return `${m}m`;
-                return `${Math.floor(m / 60)}h ${m % 60}m`;
-            };
-
-            return (
-                <div className="chart-container">
-                    <div className="chart-title">🏆 Top 10 Most Expensive Sessions</div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', color: '#c0c0c0', marginTop: '0.75rem' }}>
-                        <thead>
-                            <tr style={{ color: '#a0a0a0', borderBottom: '1px solid #2a3f5f' }}>
-                                <th style={{ textAlign: 'left', padding: '4px 8px' }}>#</th>
-                                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Agent</th>
-                                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Channel</th>
-                                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Started</th>
-                                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Duration</th>
-                                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Messages</th>
-                                <th style={{ textAlign: 'left', padding: '4px 8px' }}>Tokens</th>
-                                <th style={{ textAlign: 'right', padding: '4px 8px' }}>Cost</th>
-                                <th style={{ padding: '4px 8px' }}></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sessions.map((s, i) => (
-                                <tr key={s.session_id} style={{ borderBottom: '1px solid #1a2040' }}>
-                                    <td style={{ padding: '5px 8px', color: i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : '#606880', fontWeight: 'bold' }}>{i + 1}</td>
-                                    <td style={{ padding: '5px 8px', fontWeight: 500 }}>{s.agent_id}</td>
-                                    <td style={{ padding: '5px 8px', color: '#606880' }}>{s.channel}</td>
-                                    <td style={{ padding: '5px 8px', fontSize: '0.75rem' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
-                                    <td style={{ padding: '5px 8px' }}>{fmtDur(s.started_at, s.ended_at)}</td>
-                                    <td style={{ padding: '5px 8px' }}>{s.message_count}</td>
-                                    <td style={{ padding: '5px 8px' }}>{(s.total_tokens || 0).toLocaleString()}</td>
-                                    <td style={{ padding: '5px 8px', textAlign: 'right', color: '#ff9800', fontWeight: 'bold' }}>${Number(s.total_cost).toFixed(4)}</td>
-                                    <td style={{ padding: '5px 8px' }}>
-                                        <button
-                                            onClick={() => setDrillSession(s.session_id === drillSession ? null : s.session_id)}
-                                            style={{ background: 'none', border: '1px solid #00bcd4', color: '#00bcd4', borderRadius: '3px', padding: '2px 6px', cursor: 'pointer', fontSize: '0.7rem' }}
-                                        >{drillSession === s.session_id ? '▲' : '▾ drill'}</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    {drillSession && <SessionDrill sessionId={drillSession} onClose={() => setDrillSession(null)} />}
-                </div>
-            );
-        }
-
-        function SessionDrill({ sessionId, onClose }) {
-            const [turns, setTurns] = React.useState([]);
-            const [loading, setLoading] = React.useState(true);
-            React.useEffect(() => {
-                axios.get(`${API_BASE}/sessions/${sessionId}/prompts`)
-                    .then(r => setTurns(r.data.turns || []))
-                    .catch(() => {})
-                    .finally(() => setLoading(false));
-            }, [sessionId]);
-            return (
-                <div style={{ marginTop: '0.75rem', background: '#0a0e27', borderRadius: '6px', padding: '0.75rem', borderLeft: '3px solid #00bcd4' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                        <span style={{ color: '#00bcd4', fontSize: '0.8rem', fontWeight: 'bold' }}>Session: {sessionId}</span>
-                        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#606880', cursor: 'pointer' }}>✕</button>
-                    </div>
-                    {loading ? <div style={{ color: '#a0a0a0', fontSize: '0.8rem' }}>Loading…</div> :
-                     turns.length === 0 ? <div style={{ color: '#606880', fontSize: '0.8rem' }}>No billable turns.</div> :
-                     <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                        {turns.map((t, i) => (
-                            <div key={i} style={{ borderBottom: '1px solid #1a2040', padding: '0.4rem 0', fontSize: '0.78rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                                    <span style={{ color: '#a0a0a0' }}>{t.model}</span>
-                                    <span style={{ color: '#ff9800', fontWeight: 'bold' }}>${Number(t.cost).toFixed(4)}</span>
+                                <div className="agent-stat">
+                                    <span className="agent-stat-label">Cost (Total):</span>
+                                    <span className="agent-stat-value">${agent.total_cost.toFixed(4)}</span>
                                 </div>
-                                <div style={{ color: '#c0c0c0', fontSize: '0.72rem' }}>{t.prompt_preview}</div>
-                                <div style={{ color: '#606880', fontSize: '0.68rem', marginTop: '2px' }}>
-                                    {(t.tokens || 0).toLocaleString()} tokens · {t.timestamp ? new Date(t.timestamp).toLocaleString() : ''}
+                                <div className="agent-stat">
+                                    <span className="agent-stat-label">Last Activity:</span>
+                                    <span className="agent-stat-value" style={{ fontSize: '0.75rem' }}>
+                                        {agent.last_activity ? new Date(agent.last_activity).toLocaleString() : 'N/A'}
+                                    </span>
                                 </div>
                             </div>
                         ))}
-                     </div>
-                    }
+                    </div>
                 </div>
             );
         }
 
         function Dashboard() {
-            // Collapsible state — persisted to localStorage
-            const _loadOpen = () => {
-                try {
-                    const saved = localStorage.getItem('cangre_sections');
-                    if (saved) {
-                        const parsed = JSON.parse(saved);
-                        // Ensure new sections have defaults
-                        return { budget: true, agents: true, cron: true, burn: true, milestones: true, prompt: true, timeline: true, leaderboard: true, ...parsed };
-                    }
-                } catch (_) {}
-                return { budget: true, agents: true, cron: true, burn: true, milestones: true, prompt: true, timeline: true, leaderboard: true };
-            };
-            const [open, setOpen] = React.useState(_loadOpen);
-            const toggle = (key) => setOpen(o => {
-                const next = { ...o, [key]: !o[key] };
-                try { localStorage.setItem('cangre_sections', JSON.stringify(next)); } catch (_) {}
-                return next;
+            // Collapsible state for each section
+            const [open, setOpen] = React.useState({
+                budget: true,
+                agents: true,
+                cron: true,
+                burn: true,
+                milestones: true,
+                prompt: true,
+                timeline: true,
             });
+            const toggle = (key) => setOpen(o => ({ ...o, [key]: !o[key] }));
             const [overview, setOverview] = useState(null);
             const [models, setModels] = useState([]);
             const [summary, setSummary] = useState(null);
             const [timeline, setTimeline] = useState([]);
             const [burnRate, setBurnRate] = useState(null);
-            const [dailyTrend, setDailyTrend] = useState([]);
             const [promptCosts, setPromptCosts] = useState(null);
             const [monthCost, setMonthCost] = useState(null);
             const [periods, setPeriods] = useState([]);
@@ -1391,7 +1183,6 @@
             const [baseline, setBaseline] = useState(null);
             const [drillItem, setDrillItem] = useState(null);
             const [refreshKey, setRefreshKey] = useState(0);
-            const [clock, setClock] = useState(new Date());
 
             // Load baseline + milestones once on mount
             useEffect(() => {
@@ -1399,12 +1190,6 @@
                     if (res.data.baseline) setBaseline(res.data.baseline);
                 }).catch(() => {});
                 axios.get(`${API_BASE}/milestones`).then(res => setMilestones(res.data || [])).catch(() => {});
-            }, []);
-
-            // Live clock
-            useEffect(() => {
-                const iv = setInterval(() => setClock(new Date()), 1000);
-                return () => clearInterval(iv);
             }, []);
 
             const captureBaseline = async () => {
@@ -1439,7 +1224,7 @@
                         if (promptEndDate) promptParams.set('end_date', promptEndDate);
                         if (repeatedOnly) promptParams.set('repeated_only', 'true');
 
-                        const [overviewRes, modelsRes, summaryRes, timelineRes, burnRes, promptRes, monthRes, periodsRes, trendRes] = await Promise.all([
+                        const [overviewRes, modelsRes, summaryRes, timelineRes, burnRes, promptRes, monthRes, periodsRes] = await Promise.all([
                             axios.get(`${API_BASE}/overview`),
                             axios.get(`${API_BASE}/cost/by-model`),
                             axios.get(`${API_BASE}/metrics/summary`),
@@ -1448,7 +1233,6 @@
                             axios.get(`${API_BASE}/cost/by-prompt?${promptParams.toString()}`),
                             axios.get(`${API_BASE}/cost/month`),
                             axios.get(`${API_BASE}/cost/periods`),
-                            axios.get(`${API_BASE}/metrics/daily?days=7`),
                         ]);
 
                         setOverview(overviewRes.data);
@@ -1459,7 +1243,6 @@
                         setPromptCosts(promptRes.data);
                         setMonthCost(monthRes.data);
                         setPeriods(periodsRes.data || []);
-                        setDailyTrend(trendRes.data || []);
                         setError(null);
                     } catch (err) {
                         const details = err?.response?.status ? ` (HTTP ${err.response.status})` : '';
@@ -1485,10 +1268,6 @@
                             <code style={{ background: '#0a0e27', padding: '1rem', display: 'block', borderRadius: '4px', marginTop: '1rem', color: '#00bcd4' }}>
                                 cd ~/github/CangreDashboard/backend<br/>bash run.sh
                             </code>
-                            <button
-                                onClick={() => setRefreshKey(k => k + 1)}
-                                style={{ marginTop: '1.5rem', background: '#ff4500', border: 'none', borderRadius: '6px', color: '#fff', padding: '0.5rem 1.5rem', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold' }}
-                            >🔄 Retry</button>
                         </div>
                     </div>
                 );
@@ -1497,51 +1276,9 @@
             return (
                 <div className="dashboard-container">
                     <div className="dashboard-header">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                            <div>
-                                <h1 style={{ margin: 0 }}>🦞 CangreDashboard</h1>
-                                <p style={{ margin: 0, opacity: 0.7 }}>Real-time cost intelligence for OpenClaw</p>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                                {monthCost && (
-                                    <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                                        <span style={{ color: '#a0a0a0' }}>This month: </span>
-                                        <span style={{ color: monthCost.budget_status === 'critical' ? '#f44336' : monthCost.budget_status === 'warning' ? '#ff9800' : '#4caf50', fontWeight: 'bold' }}>
-                                            ${Number(monthCost.current_spend).toFixed(3)}
-                                        </span>
-                                        <span style={{ color: '#606880' }}> / ${monthCost.monthly_budget}</span>
-                                    </div>
-                                )}
-                                {burnRate && (
-                                    <div style={{ background: '#1a1f3a', borderRadius: '8px', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                                        <span style={{ color: '#a0a0a0' }}>Burn: </span>
-                                        <span style={{ color: '#ff4500', fontWeight: 'bold' }}>${burnRate.cost_per_hour.toFixed(5)}/h</span>
-                                    </div>
-                                )}
-                                {loading && <span style={{ color: '#00bcd4', fontSize: '0.8rem', animation: 'pulse 1s infinite' }}>⟳ refreshing…</span>}
-                                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                    <button
-                                        onClick={() => {
-                                            const allOpen = Object.keys(open).reduce((a,k) => ({...a,[k]:true}), {});
-                                            setOpen(allOpen);
-                                            try { localStorage.setItem('cangre_sections', JSON.stringify(allOpen)); } catch(_) {}
-                                        }}
-                                        style={{ background: 'none', border: '1px solid #2a3f5f', color: '#a0a0a0', borderRadius: '4px', padding: '0.2rem 0.6rem', cursor: 'pointer', fontSize: '0.75rem' }}
-                                    >▾ All</button>
-                                    <button
-                                        onClick={() => {
-                                            const allClosed = Object.keys(open).reduce((a,k) => ({...a,[k]:false}), {});
-                                            setOpen(allClosed);
-                                            try { localStorage.setItem('cangre_sections', JSON.stringify(allClosed)); } catch(_) {}
-                                        }}
-                                        style={{ background: 'none', border: '1px solid #2a3f5f', color: '#a0a0a0', borderRadius: '4px', padding: '0.2rem 0.6rem', cursor: 'pointer', fontSize: '0.75rem' }}
-                                    >▸ All</button>
-                                </div>
-                            </div>
-                        </div>
+                        <h1>🦞 CangreDashboard</h1>
+                        <p>Real-time cost intelligence for OpenClaw</p>
                     </div>
-
-                    <DailyBudgetAlert burnRate={burnRate} monthCost={monthCost} />
 
                     <div className="dashboard-content">
 
@@ -1602,19 +1339,10 @@
 
                         <div className="section">
                             <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                                <span>🏆 Session Leaderboard</span>
-                                <button onClick={()=>toggle('leaderboard')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.leaderboard ? '▾' : '▸'}</button>
-                            </h2>
-                            {open.leaderboard && <SessionLeaderboard />}
-                        </div>
-
-
-                        <div className="section">
-                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                                 <span>🔥 Burn Rate & Projections</span>
                                 <button onClick={()=>toggle('burn')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.burn ? '▾' : '▸'}</button>
                             </h2>
-                            {open.burn && <BurnRate burnRate={burnRate} loading={loading} trend={dailyTrend} />}
+                            {open.burn && <BurnRate burnRate={burnRate} loading={loading} />}
                         </div>
 
 
@@ -1717,8 +1445,8 @@
 
                         <div style={{ textAlign: 'center', color: '#a0a0a0', marginTop: '3rem', fontSize: '0.85rem' }}>
                             {!hasCharts && <p style={{ color: '#ff9800' }}>Charts disabled: Recharts CDN unavailable.</p>}
-                            <p>🕐 {clock.toLocaleTimeString()} · auto-refresh every 15s</p>
-                            <p>CangreDashboard v1.1 | OpenClaw Cost Intelligence</p>
+                            <p>Last updated: {new Date().toLocaleTimeString()}</p>
+                            <p>CangreDashboard v1.0 | OpenClaw Cost Intelligence</p>
                         </div>
                         {drillItem && <DrillModal item={drillItem} onClose={() => setDrillItem(null)} />}
                     </div>

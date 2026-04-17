@@ -1,7 +1,10 @@
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Index, Text, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
-from config import DATABASE_URL
+try:
+    from config import DATABASE_URL
+except ImportError:
+    from backend.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL, connect_args={'check_same_thread': False})
 SessionLocal = sessionmaker(bind=engine)
