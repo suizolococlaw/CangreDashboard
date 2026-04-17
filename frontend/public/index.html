@@ -780,6 +780,7 @@
             const [loading, setLoading] = React.useState(true);
             const [running, setRunning] = React.useState({});
             const [feedback, setFeedback] = React.useState({});
+            const [expanded, setExpanded] = React.useState({});
 
             const fetchJobs = async () => {
                 try {
@@ -789,7 +790,13 @@
                 setLoading(false);
             };
 
-            React.useEffect(() => { fetchJobs(); }, []);
+            React.useEffect(() => {
+                fetchJobs();
+                const iv = setInterval(fetchJobs, 15000);
+                return () => clearInterval(iv);
+            }, []);
+
+            const toggleExpanded = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
 
             const runNow = async (job) => {
                 setRunning(r => ({ ...r, [job.id]: true }));
@@ -805,7 +812,7 @@
             };
 
             const statusColor = (s) => s === 'ok' ? '#4caf50' : s === 'error' ? '#f44336' : '#a0a0a0';
-            const fmtDur = (ms) => ms == null ? '—' : ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
+            const fmtDur = (ms) => ms == null ? '—' : ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms/1000).toFixed(1)}s` : `${Math.floor(ms/60000)}m ${Math.floor((ms%60000)/1000)}s`;
             const fmtAgo = (iso) => {
                 if (!iso) return '—';
                 const diff = Date.now() - new Date(iso + 'Z').getTime();
@@ -824,6 +831,40 @@
                 const h = Math.floor(m / 60);
                 if (h < 24) return `in ${h}h`;
                 return `in ${Math.floor(h/24)}d`;
+            };
+            const fmtElapsed = (ms) => {
+                if (!ms) return '';
+                const s = Math.floor(ms / 1000);
+                if (s < 60) return `${s}s`;
+                const m = Math.floor(s / 60);
+                if (m < 60) return `${m}m ${s % 60}s`;
+                const h = Math.floor(m / 60);
+                return `${h}h ${m % 60}m`;
+            };
+            const LiveStatus = ({ job }) => {
+                if (job.is_stuck) return (
+                    <span style={{ background: 'rgba(255,152,0,0.15)', border: '1px solid #ff9800', borderRadius: '4px', padding: '2px 7px', color: '#ff9800', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                        ⚠️ Stuck · {fmtElapsed(job.elapsed_ms)}
+                    </span>
+                );
+                if (job.is_running) return (
+                    <span style={{ background: 'rgba(0,188,212,0.15)', border: '1px solid #00bcd4', borderRadius: '4px', padding: '2px 7px', color: '#00bcd4', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                        🔄 Running · {fmtElapsed(job.elapsed_ms)}
+                    </span>
+                );
+                if (job.last_run_status === 'error') return (
+                    <span style={{ background: 'rgba(244,67,54,0.12)', border: '1px solid #f44336', borderRadius: '4px', padding: '2px 7px', color: '#f44336', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                        ❌ Error{job.consecutive_errors > 1 ? ` ×${job.consecutive_errors}` : ''}
+                    </span>
+                );
+                if (job.last_run_status === 'ok') return (
+                    <span style={{ background: 'rgba(76,175,80,0.12)', border: '1px solid #4caf50', borderRadius: '4px', padding: '2px 7px', color: '#4caf50', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                        ✅ Done
+                    </span>
+                );
+                return (
+                    <span style={{ color: '#606880', fontSize: '0.72rem' }}>⚪ idle</span>
+                );
             };
 
             // Group by agent
@@ -844,56 +885,83 @@
                                 <thead>
                                     <tr style={{ color: '#a0a0a0', borderBottom: '1px solid #2a3f5f' }}>
                                         <th style={{ textAlign: 'left', padding: '4px 8px' }}>Name</th>
-                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Schedule</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Live Status</th>
                                         <th style={{ textAlign: 'left', padding: '4px 8px' }}>Last Run</th>
                                         <th style={{ textAlign: 'left', padding: '4px 8px' }}>Next Run</th>
                                         <th style={{ textAlign: 'left', padding: '4px 8px' }}>Duration</th>
-                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Status</th>
                                         <th style={{ textAlign: 'left', padding: '4px 8px' }}>Delivery</th>
                                         <th style={{ textAlign: 'left', padding: '4px 8px' }}></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {agentJobs.map(job => (
-                                        <tr key={job.id} style={{ borderBottom: '1px solid #1a2040' }}>
-                                            <td style={{ padding: '6px 8px' }}>
-                                                <div style={{ fontWeight: 500, color: '#e0e0e0' }}>{job.name}</div>
-                                                {job.description && <div style={{ fontSize: '0.72rem', color: '#606880', marginTop: '2px' }}>{job.description}</div>}
-                                            </td>
-                                            <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: '#00bcd4', whiteSpace: 'nowrap' }}>{job.schedule_expr}{job.schedule_tz ? ` (${job.schedule_tz})` : ''}</td>
-                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtAgo(job.last_run_at)}</td>
-                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtIn(job.next_run_at)}</td>
-                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtDur(job.last_duration_ms)}</td>
-                                            <td style={{ padding: '6px 8px' }}>
-                                                <span style={{ color: statusColor(job.last_run_status), fontWeight: 600, fontSize: '0.75rem' }}>
-                                                    {job.last_run_status === 'ok' ? '✅' : job.last_run_status === 'error' ? '❌' : '⚪'} {job.last_run_status}
-                                                    {job.consecutive_errors > 0 && <span style={{ color: '#f44336', marginLeft: '4px' }}>({job.consecutive_errors} err)</span>}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '6px 8px', fontSize: '0.72rem', color: job.delivery_mode === 'announce' ? '#ff9800' : '#606880' }}>
-                                                {job.delivery_mode === 'announce' ? `📣 ${job.delivery_channel}` : '🔕 none'}
-                                            </td>
-                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-                                                {feedback[job.id] ? (
-                                                    <span style={{ fontSize: '0.72rem' }}>{feedback[job.id]}</span>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => runNow(job)}
-                                                        disabled={running[job.id]}
-                                                        style={{
-                                                            background: 'none',
-                                                            border: '1px solid #ff4500',
-                                                            color: '#ff4500',
-                                                            borderRadius: '4px',
-                                                            padding: '2px 8px',
-                                                            cursor: running[job.id] ? 'not-allowed' : 'pointer',
-                                                            fontSize: '0.75rem',
-                                                            opacity: running[job.id] ? 0.5 : 1,
-                                                        }}
-                                                    >{running[job.id] ? '⏳' : '▶ Run now'}</button>
-                                                )}
-                                            </td>
-                                        </tr>
+                                        <React.Fragment key={job.id}>
+                                            <tr style={{ borderBottom: expanded[job.id] ? 'none' : '1px solid #1a2040' }}>
+                                                <td style={{ padding: '6px 8px' }}>
+                                                    <div
+                                                        style={{ fontWeight: 500, color: '#e0e0e0', cursor: (job.last_run_summary || job.last_run_error_detail) ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                        onClick={() => (job.last_run_summary || job.last_run_error_detail) && toggleExpanded(job.id)}
+                                                        title={(job.last_run_summary || job.last_run_error_detail) ? 'Click to view last output' : ''}
+                                                    >
+                                                        {(job.last_run_summary || job.last_run_error_detail) && (
+                                                            <span style={{ color: '#00bcd4', fontSize: '0.65rem' }}>{expanded[job.id] ? '▾' : '▸'}</span>
+                                                        )}
+                                                        {job.name}
+                                                    </div>
+                                                    {job.description && <div style={{ fontSize: '0.72rem', color: '#606880', marginTop: '2px' }}>{job.description}</div>}
+                                                </td>
+                                                <td style={{ padding: '6px 8px' }}><LiveStatus job={job} /></td>
+                                                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtAgo(job.last_run_at)}</td>
+                                                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtIn(job.next_run_at)}</td>
+                                                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtDur(job.last_duration_ms)}</td>
+                                                <td style={{ padding: '6px 8px', fontSize: '0.72rem', color: job.delivery_mode === 'announce' ? '#ff9800' : '#606880' }}>
+                                                    {job.delivery_mode === 'announce' ? `📣 ${job.delivery_channel}` : '🔕 none'}
+                                                </td>
+                                                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                                                    {feedback[job.id] ? (
+                                                        <span style={{ fontSize: '0.72rem' }}>{feedback[job.id]}</span>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => runNow(job)}
+                                                            disabled={running[job.id]}
+                                                            style={{
+                                                                background: 'none',
+                                                                border: '1px solid #ff4500',
+                                                                color: '#ff4500',
+                                                                borderRadius: '4px',
+                                                                padding: '2px 8px',
+                                                                cursor: running[job.id] ? 'not-allowed' : 'pointer',
+                                                                fontSize: '0.75rem',
+                                                                opacity: running[job.id] ? 0.5 : 1,
+                                                            }}
+                                                        >{running[job.id] ? '⏳' : '▶ Run now'}</button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                            {expanded[job.id] && (
+                                                <tr style={{ borderBottom: '1px solid #1a2040' }}>
+                                                    <td colSpan={7} style={{ padding: '0 8px 10px 24px' }}>
+                                                        {job.last_run_error_detail && (
+                                                            <div style={{ background: 'rgba(244,67,54,0.08)', border: '1px solid #f44336', borderRadius: '4px', padding: '0.5rem 0.75rem', marginBottom: '0.4rem', color: '#f44336', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-word' }}>
+                                                                ❌ {job.last_run_error_detail}
+                                                            </div>
+                                                        )}
+                                                        {job.last_run_summary && (
+                                                            <div style={{ background: '#0a0e27', borderRadius: '4px', padding: '0.5rem 0.75rem', color: '#c0c0c0', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '200px', overflowY: 'auto', lineHeight: 1.5 }}>
+                                                                {job.last_run_summary}
+                                                            </div>
+                                                        )}
+                                                        {job.last_run_tokens && (
+                                                            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.4rem', fontSize: '0.7rem', color: '#606880' }}>
+                                                                <span>in {(job.last_run_tokens.input || 0).toLocaleString()}</span>
+                                                                <span>out {(job.last_run_tokens.output || 0).toLocaleString()}</span>
+                                                                <span>total {(job.last_run_tokens.total || 0).toLocaleString()}</span>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
                                     ))}
                                 </tbody>
                             </table>

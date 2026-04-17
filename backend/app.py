@@ -643,6 +643,48 @@ def get_cronjobs():
         delivery = job.get('delivery', {})
         last_ms = state.get('lastRunAtMs')
         next_ms = state.get('nextRunAtMs')
+
+        # --- Detect live running state from run log ---
+        is_running = False
+        elapsed_ms = None
+        is_stuck = False
+        last_run_summary = None
+        last_run_error_detail = None
+        last_run_tokens = None
+
+        run_file = os.path.join(CRON_RUNS_DIR, f"{job['id']}.jsonl")
+        last_finished_run_at_ms = None
+        if os.path.exists(run_file):
+            try:
+                with open(run_file, 'r') as rf:
+                    lines = [l.strip() for l in rf if l.strip()]
+                if lines:
+                    last_entry = json.loads(lines[-1])
+                    last_finished_run_at_ms = last_entry.get('runAtMs')
+                    raw_summary = last_entry.get('summary') or ''
+                    last_run_summary = raw_summary[:500] if raw_summary else None
+                    last_run_error_detail = last_entry.get('error')
+                    usage = last_entry.get('usage') or {}
+                    last_run_tokens = {
+                        'input': usage.get('input_tokens', 0),
+                        'output': usage.get('output_tokens', 0),
+                        'total': usage.get('total_tokens', 0),
+                    }
+            except Exception:
+                pass
+
+        if last_ms:
+            # Job is running if it started more recently than the last completed run entry
+            if last_finished_run_at_ms is None or last_ms > last_finished_run_at_ms:
+                is_running = True
+                elapsed_ms = now_ms - last_ms
+                prev_dur = state.get('lastDurationMs')
+                # Stuck = running > 3x typical duration, or > 45 min with no baseline
+                if prev_dur and elapsed_ms > prev_dur * 3:
+                    is_stuck = True
+                elif elapsed_ms > 45 * 60 * 1000:
+                    is_stuck = True
+
         jobs.append({
             'id': job['id'],
             'agent_id': job.get('agentId', ''),
@@ -661,6 +703,13 @@ def get_cronjobs():
             'last_duration_ms': state.get('lastDurationMs'),
             'consecutive_errors': state.get('consecutiveErrors', 0),
             'last_delivered': state.get('lastDelivered', False),
+            # Live status fields
+            'is_running': is_running,
+            'elapsed_ms': elapsed_ms,
+            'is_stuck': is_stuck,
+            'last_run_summary': last_run_summary,
+            'last_run_error_detail': last_run_error_detail,
+            'last_run_tokens': last_run_tokens,
         })
     # Sort: by agent_id then name
     jobs.sort(key=lambda j: (j['agent_id'], j['name']))
