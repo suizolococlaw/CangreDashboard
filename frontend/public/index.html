@@ -7,6 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
     <title>CangreDashboard - Cost Intelligence for OpenClaw</title>
     <link rel="stylesheet" href="./index.css">
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -903,6 +904,17 @@
         }
 
         function Dashboard() {
+            // Collapsible state for each section
+            const [open, setOpen] = React.useState({
+                budget: true,
+                overview: true,
+                cron: true,
+                burn: true,
+                milestones: true,
+                prompt: true,
+                timeline: true,
+            });
+            const toggle = key => setOpen(o => ({ ...o, [key]: !o[key] }));
             const [overview, setOverview] = useState(null);
             const [models, setModels] = useState(null);
             const [summary, setSummary] = useState(null);
@@ -1020,122 +1032,151 @@
                     </div>
 
                     <div className="dashboard-content">
-                        <div className="section">
-                            <h2 className="section-title">💸 Budget</h2>
-                            <BudgetGauge monthCost={monthCost} periods={periods} loading={loading} />
-                        </div>
 
                         <div className="section">
-                            <h2 className="section-title">📈 Overview</h2>
-                            <Overview overview={overview} loading={loading} onRefresh={async () => {
-                                try { await axios.post(`${API_BASE}/admin/rescan`); } catch(e) {}
-                                setTimeout(() => setRefreshKey(k => k + 1), 800);
-                            }} />
+                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>💸 Budget</span>
+                                <button onClick={()=>toggle('budget')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.budget ? '▾' : '▸'}</button>
+                            </h2>
+                            {open.budget && <BudgetGauge monthCost={monthCost} periods={periods} loading={loading} />}
                         </div>
 
+
+                        <div className="section">
+                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>📈 Overview</span>
+                                <button onClick={()=>toggle('overview')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.overview ? '▾' : '▸'}</button>
+                            </h2>
+                            {open.overview && (
+                                <Overview overview={overview} loading={loading} onRefresh={async () => {
+                                    try { await axios.post(`${API_BASE}/admin/rescan`); } catch(e) {}
+                                    setTimeout(() => setRefreshKey(k => k + 1), 800);
+                                }} />
+                            )}
+                        </div>
+
+
+                        {/*
                         <div className="section">
                             <h2 className="section-title">💰 Cost Analysis</h2>
                             <CostBreakdown models={models} summary={summary} loading={loading} />
                         </div>
+                        */}
+
 
                         <div className="section">
-                            <h2 className="section-title">⏰ Cron Jobs</h2>
-                            <CronJobs />
+                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>⏰ Cron Jobs</span>
+                                <button onClick={()=>toggle('cron')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.cron ? '▾' : '▸'}</button>
+                            </h2>
+                            {open.cron && <CronJobs />}
                         </div>
 
+
                         <div className="section">
-                            <h2 className="section-title">🔥 Burn Rate & Projections</h2>
-                            <BurnRate burnRate={burnRate} loading={loading} />
+                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>🔥 Burn Rate & Projections</span>
+                                <button onClick={()=>toggle('burn')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.burn ? '▾' : '▸'}</button>
+                            </h2>
+                            {open.burn && <BurnRate burnRate={burnRate} loading={loading} />}
                         </div>
+
 
                         <div className="section">
                             <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
                                 <span>🏁 Efficiency Milestones</span>
+                                <button onClick={()=>toggle('milestones')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.milestones ? '▾' : '▸'}</button>
                             </h2>
-                            <MilestonesPanel
-                                milestones={milestones}
-                                onDelete={deleteMilestone}
-                                onAdd={addMilestone}
-                                onCompare={setCompareTarget}
-                                compareTarget={compareTarget}
-                            />
-                        </div>
-
-                        <div className="section">
-                            <h2 className="section-title">
-                                🧠 Cost By Prompt
-                                <a
-                                    className="btn-export-csv"
-                                    href={`${API_BASE}/export/prompt-costs.csv?limit=1000&mode=repeated${promptAgentId ? '&agent_id=' + promptAgentId : ''}${promptStartDate ? '&start_date=' + promptStartDate : ''}${promptEndDate ? '&end_date=' + promptEndDate : ''}`}
-                                    download
-                                >
-                                    ⬇ Repeated CSV
-                                </a>
-                                &nbsp;
-                                <button
-                                    className="btn-export-csv"
-                                    style={{ cursor: 'pointer', background: 'none', border: '1px solid #00bcd4', borderRadius: '4px', color: '#00bcd4', padding: '0.2rem 0.6rem', fontSize: '0.75rem' }}
-                                    onClick={captureBaseline}
-                                >
-                                    📸 Baseline
-                                </button>
-                            </h2>
-                            <div className="filter-bar">
-                                <label className="filter-field">
-                                    <span>Agent</span>
-                                    <select value={promptAgentId} onChange={(event) => setPromptAgentId(event.target.value)}>
-                                        <option value="">All agents</option>
-                                        {(overview?.agents || []).map((agent) => (
-                                            <option key={agent.agent_id} value={agent.agent_id}>{agent.name || agent.agent_id}</option>
-                                        ))}
-                                    </select>
-                                </label>
-                                <label className="filter-field">
-                                    <span>Start date</span>
-                                    <input type="date" value={promptStartDate} onChange={(event) => setPromptStartDate(event.target.value)} />
-                                </label>
-                                <label className="filter-field">
-                                    <span>End date</span>
-                                    <input type="date" value={promptEndDate} onChange={(event) => setPromptEndDate(event.target.value)} />
-                                </label>
-                                <label className="filter-field" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.4rem' }}>
-                                    <input type="checkbox" checked={repeatedOnly} onChange={e => setRepeatedOnly(e.target.checked)} />
-                                    <span>Repeated only</span>
-                                </label>
-                                <button
-                                    className="filter-reset"
-                                    type="button"
-                                    onClick={() => {
-                                        setPromptAgentId('');
-                                        setPromptStartDate('');
-                                        setPromptEndDate('');
-                                        setRepeatedOnly(false);
-                                    }}
-                                >
-                                    Reset
-                                </button>
-                            </div>
-                            <BaselineDelta
-                                current={promptCosts?.summary}
-                                baseline={compareTarget ? { captured_at: compareTarget.created_at, summary: compareTarget.snapshot } : baseline}
-                            />
-                            {compareTarget && (
-                                <div style={{ fontSize: '0.72rem', color: '#00bcd4', marginBottom: '0.5rem' }}>
-                                    Comparing vs milestone: <strong>{compareTarget.name}</strong>
-                                    <button onClick={() => setCompareTarget(null)} style={{ marginLeft: '0.5rem', background: 'none', border: 'none', color: '#a0a0a0', cursor: 'pointer', fontSize: '0.72rem' }}>✕ clear</button>
-                                </div>
+                            {open.milestones && (
+                                <MilestonesPanel
+                                    milestones={milestones}
+                                    onDelete={deleteMilestone}
+                                    onAdd={addMilestone}
+                                    onCompare={setCompareTarget}
+                                    compareTarget={compareTarget}
+                                />
                             )}
-                            <PromptCostAnalysis promptCosts={promptCosts} loading={loading} />
-                            <Recommendations
-                                promptCosts={promptCosts}
-                                onDrillItem={setDrillItem}
-                                onRefresh={() => setRefreshKey(k => k + 1)}
-                            />
                         </div>
 
                         <div className="section">
-                            <h2 className="section-title">⏱️ Recent Execution Timeline</h2>
-                            <Timeline timeline={timeline} loading={loading} />
+                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>
+                                    🧠 Cost By Prompt&nbsp;
+                                    <a
+                                        className="btn-export-csv"
+                                        href={`${API_BASE}/export/prompt-costs.csv?limit=1000&mode=repeated${promptAgentId ? '&agent_id=' + promptAgentId : ''}${promptStartDate ? '&start_date=' + promptStartDate : ''}${promptEndDate ? '&end_date=' + promptEndDate : ''}`}
+                                        download
+                                    >⬇ Repeated CSV</a>
+                                    &nbsp;
+                                    <button
+                                        className="btn-export-csv"
+                                        style={{ cursor: 'pointer', background: 'none', border: '1px solid #00bcd4', borderRadius: '4px', color: '#00bcd4', padding: '0.2rem 0.6rem', fontSize: '0.75rem' }}
+                                        onClick={captureBaseline}
+                                    >📸 Baseline</button>
+                                </span>
+                                <button onClick={()=>toggle('prompt')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.prompt ? '▾' : '▸'}</button>
+                            </h2>
+                            {open.prompt && (
+                                <>
+                                    <div className="filter-bar">
+                                        <label className="filter-field">
+                                            <span>Agent</span>
+                                            <select value={promptAgentId} onChange={(event) => setPromptAgentId(event.target.value)}>
+                                                <option value="">All agents</option>
+                                                {(overview?.agents || []).map((agent) => (
+                                                    <option key={agent.agent_id} value={agent.agent_id}>{agent.name || agent.agent_id}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <label className="filter-field">
+                                            <span>Start date</span>
+                                            <input type="date" value={promptStartDate} onChange={(event) => setPromptStartDate(event.target.value)} />
+                                        </label>
+                                        <label className="filter-field">
+                                            <span>End date</span>
+                                            <input type="date" value={promptEndDate} onChange={(event) => setPromptEndDate(event.target.value)} />
+                                        </label>
+                                        <label className="filter-field" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.4rem' }}>
+                                            <input type="checkbox" checked={repeatedOnly} onChange={e => setRepeatedOnly(e.target.checked)} />
+                                            <span>Repeated only</span>
+                                        </label>
+                                        <button
+                                            className="filter-reset"
+                                            type="button"
+                                            onClick={() => {
+                                                setPromptAgentId('');
+                                                setPromptStartDate('');
+                                                setPromptEndDate('');
+                                                setRepeatedOnly(false);
+                                            }}
+                                        >Reset</button>
+                                    </div>
+                                    <BaselineDelta
+                                        current={promptCosts?.summary}
+                                        baseline={compareTarget ? { captured_at: compareTarget.created_at, summary: compareTarget.snapshot } : baseline}
+                                    />
+                                    {compareTarget && (
+                                        <div style={{ fontSize: '0.72rem', color: '#00bcd4', marginBottom: '0.5rem' }}>
+                                            Comparing vs milestone: <strong>{compareTarget.name}</strong>
+                                            <button onClick={() => setCompareTarget(null)} style={{ marginLeft: '0.5rem', background: 'none', border: 'none', color: '#a0a0a0', cursor: 'pointer', fontSize: '0.72rem' }}>✕ clear</button>
+                                        </div>
+                                    )}
+                                    <PromptCostAnalysis promptCosts={promptCosts} loading={loading} />
+                                    <Recommendations
+                                        promptCosts={promptCosts}
+                                        onDrillItem={setDrillItem}
+                                        onRefresh={() => setRefreshKey(k => k + 1)}
+                                    />
+                                </>
+                            )}
+                        </div>
+
+                        <div className="section">
+                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>⏱️ Recent Execution Timeline</span>
+                                <button onClick={()=>toggle('timeline')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.timeline ? '▾' : '▸'}</button>
+                            </h2>
+                            {open.timeline && <Timeline timeline={timeline} loading={loading} />}
                         </div>
 
                         <div style={{ textAlign: 'center', color: '#a0a0a0', marginTop: '3rem', fontSize: '0.85rem' }}>
