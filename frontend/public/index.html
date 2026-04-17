@@ -903,22 +903,121 @@
             );
         }
 
+        function AgentBreakdown({ overview, loading, onRefresh }) {
+            const [showSessions, setShowSessions] = React.useState(false);
+            const [activeSessions, setActiveSessions] = React.useState([]);
+            const [sessionsLoading, setSessionsLoading] = React.useState(false);
+
+            if (loading || !overview) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
+
+            const formatNumber = (num) => {
+                if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+                if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+                return num.toString();
+            };
+
+            const toggleSessions = async () => {
+                if (showSessions) { setShowSessions(false); return; }
+                setSessionsLoading(true);
+                try {
+                    const res = await axios.get(`${API_BASE}/sessions?status=active&limit=20`);
+                    setActiveSessions(res.data || []);
+                } catch (e) { setActiveSessions([]); }
+                setSessionsLoading(false);
+                setShowSessions(true);
+            };
+
+            return (
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+                        <div
+                            className="stat-tile"
+                            onClick={toggleSessions}
+                            style={{ cursor: 'pointer', maxWidth: 280, flex: '0 0 auto' }}
+                        >
+                            <div className="stat-label">🔄 Active Sessions</div>
+                            <div className="stat-value">{overview.active_sessions}</div>
+                            <div className="stat-subtext">{showSessions ? '▲ hide' : '▼ tap to expand'}</div>
+                        </div>
+                        <button
+                            onClick={onRefresh}
+                            disabled={loading}
+                            style={{ background: 'none', border: '1px solid #ff4500', color: '#ff4500', borderRadius: '6px', padding: '3px 10px', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '0.8rem', opacity: loading ? 0.5 : 1 }}
+                        >{loading ? '⏳' : '🔄 Refresh'}</button>
+                    </div>
+
+                    {showSessions && (
+                        <div style={{ marginBottom: '1rem' }}>
+                            {sessionsLoading ? (
+                                <div style={{ color: '#a0a0a0', fontSize: '0.85rem', padding: '0.5rem' }}>Loading…</div>
+                            ) : activeSessions.length === 0 ? (
+                                <div style={{ color: '#a0a0a0', fontSize: '0.85rem', padding: '0.5rem' }}>No active sessions right now.</div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', color: '#c0c0c0' }}>
+                                    <thead>
+                                        <tr style={{ color: '#a0a0a0', borderBottom: '1px solid #2a3f5f' }}>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Agent</th>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Channel</th>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Started</th>
+                                            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Messages</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {activeSessions.map((s, i) => (
+                                            <tr key={s.session_id || i} style={{ borderBottom: '1px solid #1a2040' }}>
+                                                <td style={{ padding: '4px 8px' }}>{s.agent_id}</td>
+                                                <td style={{ padding: '4px 8px' }}>{s.channel || '—'}</td>
+                                                <td style={{ padding: '4px 8px' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
+                                                <td style={{ padding: '4px 8px' }}>{s.message_count ?? '—'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="agent-list">
+                        {overview.agents.map((agent) => (
+                            <div key={agent.agent_id} className="agent-card">
+                                <div className="agent-name">🦞 {agent.name || agent.agent_id}</div>
+                                <div className="agent-stat">
+                                    <span className="agent-stat-label">Tokens (Total):</span>
+                                    <span className="agent-stat-value">{formatNumber(agent.total_tokens)}</span>
+                                </div>
+                                <div className="agent-stat">
+                                    <span className="agent-stat-label">Cost (Total):</span>
+                                    <span className="agent-stat-value">${agent.total_cost.toFixed(4)}</span>
+                                </div>
+                                <div className="agent-stat">
+                                    <span className="agent-stat-label">Last Activity:</span>
+                                    <span className="agent-stat-value" style={{ fontSize: '0.75rem' }}>
+                                        {agent.last_activity ? new Date(agent.last_activity).toLocaleString() : 'N/A'}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
         function Dashboard() {
             // Collapsible state for each section
             const [open, setOpen] = React.useState({
                 budget: true,
-                overview: true,
+                agents: true,
                 cron: true,
                 burn: true,
                 milestones: true,
                 prompt: true,
                 timeline: true,
             });
-            const toggle = key => setOpen(o => ({ ...o, [key]: !o[key] }));
+            const toggle = (key) => setOpen(o => ({ ...o, [key]: !o[key] }));
             const [overview, setOverview] = useState(null);
-            const [models, setModels] = useState(null);
+            const [models, setModels] = useState([]);
             const [summary, setSummary] = useState(null);
-            const [timeline, setTimeline] = useState(null);
+            const [timeline, setTimeline] = useState([]);
             const [burnRate, setBurnRate] = useState(null);
             const [promptCosts, setPromptCosts] = useState(null);
             const [monthCost, setMonthCost] = useState(null);
@@ -1042,6 +1141,7 @@
                         </div>
 
 
+                        {/*
                         <div className="section">
                             <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                                 <span>📈 Overview</span>
@@ -1054,14 +1154,28 @@
                                 }} />
                             )}
                         </div>
-
-
-                        {/*
-                        <div className="section">
-                            <h2 className="section-title">💰 Cost Analysis</h2>
-                            <CostBreakdown models={models} summary={summary} loading={loading} />
-                        </div>
                         */}
+
+
+                        {/* Cost Analysis section is hidden */}
+
+
+                        <div className="section">
+                            <h2 className="section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>👥 Agent Breakdown</span>
+                                <button onClick={()=>toggle('agents')} style={{background:'none',border:'none',color:'#00bcd4',fontSize:'1.1rem',cursor:'pointer'}}>{open.agents ? '▾' : '▸'}</button>
+                            </h2>
+                            {open.agents && (
+                                <AgentBreakdown
+                                    overview={overview}
+                                    loading={loading}
+                                    onRefresh={async () => {
+                                        try { await axios.post(`${API_BASE}/admin/rescan`); } catch(e) {}
+                                        setTimeout(() => setRefreshKey(k => k + 1), 800);
+                                    }}
+                                />
+                            )}
+                        </div>
 
 
                         <div className="section">
