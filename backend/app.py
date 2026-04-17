@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import os
+import subprocess
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from sqlalchemy import func, desc
@@ -621,6 +622,74 @@ def admin_aggregate_costs():
         return jsonify({'status': 'aggregation complete', 'timestamp': datetime.utcnow().isoformat()})
     finally:
         db.close()
+
+CRON_JOBS_FILE = os.path.expanduser('~/.openclaw/cron/jobs.json')
+CRON_RUNS_DIR = os.path.expanduser('~/.openclaw/cron/runs')
+
+
+@app.route('/api/cronjobs', methods=['GET'])
+def get_cronjobs():
+    """Return all cron jobs from ~/.openclaw/cron/jobs.json with computed display fields."""
+    if not os.path.exists(CRON_JOBS_FILE):
+        return jsonify({'jobs': [], 'total': 0})
+    with open(CRON_JOBS_FILE, 'r') as f:
+        data = json.load(f)
+    now_ms = int(datetime.utcnow().timestamp() * 1000)
+    jobs = []
+    for job in data.get('jobs', []):
+        state = job.get('state', {})
+        schedule = job.get('schedule', {})
+        payload = job.get('payload', {})
+        delivery = job.get('delivery', {})
+        last_ms = state.get('lastRunAtMs')
+        next_ms = state.get('nextRunAtMs')
+        jobs.append({
+            'id': job['id'],
+            'agent_id': job.get('agentId', ''),
+            'name': job.get('name', ''),
+            'description': job.get('description', ''),
+            'enabled': job.get('enabled', True),
+            'schedule_expr': schedule.get('expr', ''),
+            'schedule_tz': schedule.get('tz', ''),
+            'model': payload.get('model', ''),
+            'session_target': job.get('sessionTarget', ''),
+            'delivery_mode': delivery.get('mode', ''),
+            'delivery_channel': delivery.get('channel', ''),
+            'last_run_at': datetime.utcfromtimestamp(last_ms / 1000).isoformat() if last_ms else None,
+            'next_run_at': datetime.utcfromtimestamp(next_ms / 1000).isoformat() if next_ms else None,
+            'last_run_status': state.get('lastRunStatus') or state.get('lastStatus') or 'idle',
+            'last_duration_ms': state.get('lastDurationMs'),
+            'consecutive_errors': state.get('consecutiveErrors', 0),
+            'last_delivered': state.get('lastDelivered', False),
+        })
+    # Sort: by agent_id then name
+    jobs.sort(key=lambda j: (j['agent_id'], j['name']))
+    return jsonify({'jobs': jobs, 'total': len(jobs)})
+
+
+@app.route('/api/cronjobs/<job_id>/run', methods=['POST'])
+def run_cronjob(job_id):
+    """Manually trigger a cron job via openclaw cron run <job_id>."""
+    # Basic validation: job_id should be a UUID
+    import re
+    if not re.match(r'^[0-9a-f-]{36}$', job_id):
+        return jsonify({'error': 'invalid job_id'}), 400
+    try:
+        result = subprocess.run(
+            ['openclaw', 'cron', 'run', job_id],
+            capture_output=True, text=True, timeout=15
+        )
+        return jsonify({
+            'ok': result.returncode == 0,
+            'stdout': result.stdout.strip(),
+            'stderr': result.stderr.strip(),
+            'job_id': job_id,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({'ok': False, 'error': 'command timed out'}), 504
+    except FileNotFoundError:
+        return jsonify({'ok': False, 'error': 'openclaw CLI not found'}), 500
+
 
 if __name__ == '__main__':
     logger.info(f'Starting CangreDashboard Backend on {FLASK_HOST}:{FLASK_PORT}')

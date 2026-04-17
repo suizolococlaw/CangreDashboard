@@ -774,6 +774,134 @@
             );
         }
 
+        function CronJobs() {
+            const [jobs, setJobs] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [running, setRunning] = React.useState({});
+            const [feedback, setFeedback] = React.useState({});
+
+            const fetchJobs = async () => {
+                try {
+                    const res = await axios.get(`${API_BASE}/cronjobs`);
+                    setJobs(res.data.jobs || []);
+                } catch (e) { setJobs([]); }
+                setLoading(false);
+            };
+
+            React.useEffect(() => { fetchJobs(); }, []);
+
+            const runNow = async (job) => {
+                setRunning(r => ({ ...r, [job.id]: true }));
+                setFeedback(f => ({ ...f, [job.id]: null }));
+                try {
+                    const res = await axios.post(`${API_BASE}/cronjobs/${job.id}/run`);
+                    setFeedback(f => ({ ...f, [job.id]: res.data.ok ? '✅ queued' : `❌ ${res.data.stderr || res.data.error || 'error'}` }));
+                } catch (e) {
+                    setFeedback(f => ({ ...f, [job.id]: '❌ failed' }));
+                }
+                setRunning(r => ({ ...r, [job.id]: false }));
+                setTimeout(() => setFeedback(f => ({ ...f, [job.id]: null })), 5000);
+            };
+
+            const statusColor = (s) => s === 'ok' ? '#4caf50' : s === 'error' ? '#f44336' : '#a0a0a0';
+            const fmtDur = (ms) => ms == null ? '—' : ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
+            const fmtAgo = (iso) => {
+                if (!iso) return '—';
+                const diff = Date.now() - new Date(iso + 'Z').getTime();
+                const m = Math.floor(diff / 60000);
+                if (m < 60) return `${m}m ago`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `${h}h ago`;
+                return `${Math.floor(h/24)}d ago`;
+            };
+            const fmtIn = (iso) => {
+                if (!iso) return '—';
+                const diff = new Date(iso + 'Z').getTime() - Date.now();
+                if (diff <= 0) return 'due';
+                const m = Math.floor(diff / 60000);
+                if (m < 60) return `in ${m}m`;
+                const h = Math.floor(m / 60);
+                if (h < 24) return `in ${h}h`;
+                return `in ${Math.floor(h/24)}d`;
+            };
+
+            // Group by agent
+            const byAgent = jobs.reduce((acc, j) => {
+                (acc[j.agent_id] = acc[j.agent_id] || []).push(j);
+                return acc;
+            }, {});
+
+            if (loading) return <div className="loading-container"><div className="loading-spinner">⏳</div></div>;
+            if (jobs.length === 0) return <div className="empty-state"><p>No cron jobs configured.</p></div>;
+
+            return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {Object.entries(byAgent).map(([agentId, agentJobs]) => (
+                        <div key={agentId} className="chart-container">
+                            <div className="chart-title">🤖 {agentId}</div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', color: '#c0c0c0', marginTop: '0.75rem' }}>
+                                <thead>
+                                    <tr style={{ color: '#a0a0a0', borderBottom: '1px solid #2a3f5f' }}>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Name</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Schedule</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Last Run</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Next Run</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Duration</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Status</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Delivery</th>
+                                        <th style={{ textAlign: 'left', padding: '4px 8px' }}></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {agentJobs.map(job => (
+                                        <tr key={job.id} style={{ borderBottom: '1px solid #1a2040' }}>
+                                            <td style={{ padding: '6px 8px' }}>
+                                                <div style={{ fontWeight: 500, color: '#e0e0e0' }}>{job.name}</div>
+                                                {job.description && <div style={{ fontSize: '0.72rem', color: '#606880', marginTop: '2px' }}>{job.description}</div>}
+                                            </td>
+                                            <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: '#00bcd4', whiteSpace: 'nowrap' }}>{job.schedule_expr}{job.schedule_tz ? ` (${job.schedule_tz})` : ''}</td>
+                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtAgo(job.last_run_at)}</td>
+                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtIn(job.next_run_at)}</td>
+                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtDur(job.last_duration_ms)}</td>
+                                            <td style={{ padding: '6px 8px' }}>
+                                                <span style={{ color: statusColor(job.last_run_status), fontWeight: 600, fontSize: '0.75rem' }}>
+                                                    {job.last_run_status === 'ok' ? '✅' : job.last_run_status === 'error' ? '❌' : '⚪'} {job.last_run_status}
+                                                    {job.consecutive_errors > 0 && <span style={{ color: '#f44336', marginLeft: '4px' }}>({job.consecutive_errors} err)</span>}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '6px 8px', fontSize: '0.72rem', color: job.delivery_mode === 'announce' ? '#ff9800' : '#606880' }}>
+                                                {job.delivery_mode === 'announce' ? `📣 ${job.delivery_channel}` : '🔕 none'}
+                                            </td>
+                                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                                                {feedback[job.id] ? (
+                                                    <span style={{ fontSize: '0.72rem' }}>{feedback[job.id]}</span>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => runNow(job)}
+                                                        disabled={running[job.id]}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: '1px solid #ff4500',
+                                                            color: '#ff4500',
+                                                            borderRadius: '4px',
+                                                            padding: '2px 8px',
+                                                            cursor: running[job.id] ? 'not-allowed' : 'pointer',
+                                                            fontSize: '0.75rem',
+                                                            opacity: running[job.id] ? 0.5 : 1,
+                                                        }}
+                                                    >{running[job.id] ? '⏳' : '▶ Run now'}</button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
         function Dashboard() {
             const [overview, setOverview] = useState(null);
             const [models, setModels] = useState(null);
@@ -908,6 +1036,11 @@
                         <div className="section">
                             <h2 className="section-title">💰 Cost Analysis</h2>
                             <CostBreakdown models={models} summary={summary} loading={loading} />
+                        </div>
+
+                        <div className="section">
+                            <h2 className="section-title">⏰ Cron Jobs</h2>
+                            <CronJobs />
                         </div>
 
                         <div className="section">
